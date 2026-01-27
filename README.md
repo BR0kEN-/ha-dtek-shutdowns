@@ -30,7 +30,7 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
       - Go to [devices & services](https://my.home-assistant.io/redirect/integrations);
       - hit `Remote Calendar`;
       - find created calendar and open its contextual menu (three-dots button on the right);
-      - and hit `System options`;
+      - hit `System options`;
       - toggle off `Enable polling for changes`;
       - hit `Update`.
 
@@ -70,3 +70,17 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
       - Hit `Submit`
 
    Remember to update the calendar's entity ID.
+
+## Update
+
+After updating the addon, the calendar has to be reloaded manually:
+
+- Go to [devices & services](https://my.home-assistant.io/redirect/integrations);
+- hit `Remote Calendar`;
+- find created calendar and open its contextual menu (three-dots button on the right);
+- hit `Reload` and wait until it finishes.
+
+> [!TIP]
+> The autoupdate may cause disruption, so whenever you see no events while they're anticipated, do this cross-check:
+> - try reloading the integration;
+> - check the addon's logs - anything suspicious? report if it doesn't resolve on its own after a couple of retries.

@@ -1,11 +1,6 @@
 configuration:
   region:
     name: Region
-    options:
-      dnem: Dnipro
-      kem: Kyiv
-      krem: Kyiv Region
-      oem: Odesa
   locality:
     name: Locality
     description: The name of the locality you live in. Can be a city, town, or village.

@@ -225,7 +225,15 @@ class Ics {
     ]
   }
 
-  addEvent(updatedAt, startsAt, endsAt, summary, description) {
+  addEvent(summary, updatedAt, startsAt, endsAt, description) {
+    if (description) {
+      description += '\n '
+    } else {
+      description = ''
+    }
+
+    description += `Updated at ${updatedAt}`
+
     this.lines.push(
       'BEGIN:VEVENT',
       `UID:${this.uidPrefix}@${this.uid++}`,
@@ -233,7 +241,7 @@ class Ics {
       `DTSTART;TZID=${process.env.TZ}:${formatDateIcs(startsAt)}`,
       `DTEND;TZID=${process.env.TZ}:${formatDateIcs(endsAt)}`,
       `SUMMARY:${summary}`,
-      ...(description ? [`DESCRIPTION:${description}`] : []),
+      `DESCRIPTION:${description}`,
       'END:VEVENT',
     )
   }
@@ -245,24 +253,25 @@ class Ics {
 
 function buildIcs(region, data) {
   const ics = new Ics(`DTEK ${region.toUpperCase()} Outages ${data.group}`)
+  const eventName = `Power outage (group ${data.group})`
 
   for (const day of data.schedule.days) {
     for (const interval of day.intervals) {
       ics.addEvent(
+        eventName,
         data.schedule.updatedAt,
         day.date + ' ' + interval.startsAt,
         day.date + ' ' + interval.endsAt,
-        'Power outage',
       )
     }
   }
 
   if (data.shutdown) {
     ics.addEvent(
+      eventName,
       data.shutdown.updatedAt,
       data.shutdown.startedAt,
       data.shutdown.endsAt,
-      'Power outage',
       data.shutdown.reason,
     )
   }
