@@ -1,10 +1,11 @@
 {
   "name": "ha-dtek-shutdowns",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "main": "dtek-check-shutdown.js",
   "dependencies": {
+    "express": "^5.2.1",
     "mqtt": "^5.14.1",
     "puppeteer": "^24.36.0"
   }

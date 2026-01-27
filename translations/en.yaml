@@ -27,6 +27,3 @@ configuration:
   building:
     name: Building
     description: The number, name, or any other marking of your building.
-  interval:
-    name: Interval
-    description: The number of minutes between checks.

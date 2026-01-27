@@ -2,7 +2,7 @@
 url: https://github.com/BR0kEN-/ha-dtek-shutdowns
 name: "DTEK Outages Checker"
 slug: "ha-dtek-shutdowns"
-version: "1.0.3"
+version: "1.0.4"
 description: "Visits the DTEK website to check the outages for your address and publishes collected data via an MQTT."
 init: false
 arch:
@@ -20,7 +20,6 @@ options:
   locality: ""
   street: ""
   building: ""
-  interval: "2"
 schema:
   mqtt_host: "str"
   mqtt_port: "port"
@@ -30,4 +29,3 @@ schema:
   locality: "str"
   street: "str"
   building: "str"
-  interval: "int(2,60)"

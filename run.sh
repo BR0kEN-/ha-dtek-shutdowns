@@ -5,5 +5,4 @@ node dtek-check-shutdown.js \
   "$(bashio::config locality)" \
   "$(bashio::config street)" \
   "$(bashio::config building)" \
-  "mqtt://$(bashio::config mqtt_username):$(bashio::config mqtt_password)@$(bashio::config mqtt_host):$(bashio::config mqtt_port)" \
-  "$(bashio::config interval)"
+  "mqtt://$(bashio::config mqtt_username):$(bashio::config mqtt_password)@$(bashio::config mqtt_host):$(bashio::config mqtt_port)"

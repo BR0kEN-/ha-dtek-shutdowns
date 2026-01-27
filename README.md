@@ -42,18 +42,36 @@ The interval between the checks is configurable and can be set from 2 to 60 mins
                  for_each: "{{ day.intervals | selectattr('state', 'eq', 'outage') | list }}"
                  sequence:
                    - alias: Create an event in
+                     action: calendar.create_event
                      data:
                        summary: Power outage (group {{ group }})
                        start_date_time: "{{ day.date }} {{ repeat.item.startsAt }}"
                        end_date_time: "{{ day.date }} {{ repeat.item.endsAt }}"
-                     action: calendar.create_event
                      target:
                        entity_id: calendar.dtek_dnipro_outages_1_1
+       - alias: Create a special shutdown event
+         if:
+           - condition: template
+             value_template: "{{ shutdown is not none }}"
+             alias: Has special shutdown event?
+         then:
+           - alias: Create an event in
+             action: calendar.create_event
+             data:
+               summary: Power outage (group {{ group }})
+               description: "{{ shutdown.reason }}"
+               start_date_time: "{{ shutdown.startedAt }}"
+               end_date_time: "{{ shutdown.endsAt }}"
+             target:
+               entity_id: calendar.dtek_dnipro_outages_1_1
      ```
    - Switch back to the visual editor:
      - hit `Loop over outages for the day`;
      - hit `Create an event in`;
      - select the calendar you have created before under the `Targets`.
+     - locate the `Create a special shutdown event` block;
+       - hit `Create an event in`;
+       - select the calendar you have created before under the `Targets`.
 
 3. Optionally make sensors for the next outage and power availability.
 

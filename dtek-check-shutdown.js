@@ -1,16 +1,22 @@
 // Reverse-engineered from https://www.dtek-dnem.com.ua/src/js/static/discon-schedule.js
+import express from 'express'
 import puppeteer from 'puppeteer'
-import { connectAsync as mqttConnectAsync } from 'mqtt'
+
+process.env.TZ = 'Europe/Kyiv'
 
 /**
  * @param {Date} input
  * @param {boolean} noTime
  */
 function formatDate(input, { noTime = false } = {}) {
-  const [date, time] = input.toLocaleString('uk-UK', { timeZone: 'Europe/Kyiv' }).split(', ')
+  const [date, time] = input.toLocaleString('uk-UK', { timeZone: process.env.TZ }).split(', ')
   const [d, m, Y] = date.split('.')
 
   return `${Y}-${m}-${d}${noTime ? '' : ` ${time}`}`
+}
+
+function formatDateIcs(input) {
+  return `${input.replace(' ', 'T').replace(/[-:]/g, '')}`
 }
 
 function formatDateTime(date, time) {
@@ -45,15 +51,15 @@ function buildIntervals(hours) {
 
     switch (hours[h]) {
       case 'no':
-        segments.push({ state: 'outage', startsAt: h0, endsAt: h1 })
+        segments.push({ startsAt: h0, endsAt: h1 })
         break
 
       case 'first':
-        segments.push({ state: 'outage', startsAt: h0, endsAt: h30 })
+        segments.push({ startsAt: h0, endsAt: h30 })
         break
 
       case 'second':
-        segments.push({ state: 'outage', startsAt: h30, endsAt: h1 })
+        segments.push({ startsAt: h30, endsAt: h1 })
         break
     }
   }
@@ -91,20 +97,25 @@ async function fillAutocomplete(page, name, value) {
   const inputSelector = `input[name=${name}]`
   const optionSelector = `${inputSelector} ~ .autocomplete-items > div`
 
+  await new Promise((r) => setTimeout(r, 50))
   await (await page.locator(inputSelector))
     .setWaitForEnabled(true)
     .fill(value)
 
   await (await page.waitForSelector(optionSelector)).click()
+  await page.waitForFunction(
+    (selector) => !!document.querySelector(selector)?.value,
+    {},
+    inputSelector,
+  )
 }
 
 async function getShutdown(page, catchResponse, region, locality, street, building) {
   await page.goto(`https://www.dtek-${region}.com.ua/ua/shutdowns`)
-
-  try {
-    await (await page.waitForSelector('#modal-attention', { timeout: 1000 })).evaluate((node) => node.remove())
-  } catch {
-  }
+  // Handle `Сайт працює, але через велике навантаження треба трохи зачекати і сторінка завантажиться.`.
+  await page.waitForFunction(() => !!document.querySelector('.wrapper'), { timeout: 120_000 })
+  // Don't show freaking modals.
+  await page.addStyleTag({ content: '#modal-attention { display: none !important; }' })
 
   const detailsResponse = catchResponse()
   await fillAutocomplete(page, 'city', locality)
@@ -166,7 +177,7 @@ async function getShutdown(page, catchResponse, region, locality, street, buildi
   return result
 }
 
-async function collect(mqtt, region, locality, street, building) {
+async function collect(region, locality, street, building) {
   const browser = await puppeteer.launch({
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -174,43 +185,103 @@ async function collect(mqtt, region, locality, street, building) {
   })
 
   const [page] = await browser.pages()
-  const [mqttClient, data] = await Promise.all([
-    mqtt,
-    getShutdown(page, setupResponseCatcher(page), region, locality, street, building),
-  ])
+  const data = await getShutdown(page, setupResponseCatcher(page), region, locality, street, building)
 
   console.debug(JSON.stringify(data, null, 4))
+  await browser.close()
 
-  await Promise.all([
-    mqttClient.publishAsync(
-      'dtek/power/outages/schedule',
-      JSON.stringify(data),
-      {
-        qos: 1,
-        retain: false,
-      },
-    ),
-    browser.close()
-  ])
+  return data
+}
+
+class Ics {
+  constructor(name) {
+    this.uid = 0
+    this.uidPrefix = `${name.replace(/\W/g, '')}${new Date().toISOString()}`
+    this.lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      `PRODID:-//DTEK ${name}//EN`,
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VTIMEZONE',
+      `TZID:${process.env.TZ}`,
+      'BEGIN:STANDARD',
+      'DTSTART:19700101T000000',
+      'TZOFFSETFROM:+0200',
+      'TZOFFSETTO:+0200',
+      'END:STANDARD',
+      'END:VTIMEZONE',
+    ]
+  }
+
+  addEvent(updatedAt, startsAt, endsAt, summary, description) {
+    this.lines.push(
+      'BEGIN:VEVENT',
+      `UID:${this.uidPrefix}@${this.uid++}`,
+      `DTSTAMP;TZID=${process.env.TZ}:${formatDateIcs(updatedAt)}`,
+      `DTSTART;TZID=${process.env.TZ}:${formatDateIcs(startsAt)}`,
+      `DTEND;TZID=${process.env.TZ}:${formatDateIcs(endsAt)}`,
+      `SUMMARY:${summary}`,
+      ...(description ? [`DESCRIPTION:${description}`] : []),
+      'END:VEVENT',
+    )
+  }
+
+  toString() {
+    return '\uFEFF' + [...this.lines, 'END:VCALENDAR'].join('\r\n') + '\r\n'
+  }
+}
+
+function buildIcs(region, data) {
+  const ics = new Ics(`DTEK ${region.toUpperCase()} Outages ${data.group}`)
+
+  for (const day of data.schedule.days) {
+    for (const interval of day.intervals) {
+      ics.addEvent(
+        data.schedule.updatedAt,
+        day.date + ' ' + interval.startsAt,
+        day.date + ' ' + interval.endsAt,
+        'Power outage',
+      )
+    }
+  }
+
+  if (data.shutdown) {
+    ics.addEvent(
+      data.shutdown.updatedAt,
+      data.shutdown.startedAt,
+      data.shutdown.endsAt,
+      'Power outage',
+      data.shutdown.reason,
+    )
+  }
+
+  return ics
 }
 
 async function main() {
-  const [,, region, locality, street, building, mqttUrl, interval] = process.argv
-  const timeout = Number(interval) * 60 * 1000
-  const mqtt = mqttConnectAsync(mqttUrl, { clean: true })
+  const [,, region, locality, street, building] = process.argv
+  const app = express()
 
-  // noinspection InfiniteLoopJS
-  while (true) {
+  app.get('/dtek-shutdowns.ics', async (request, response) => {
     try {
       console.info(`[${new Date().toISOString()}] Collecting the data`)
-      await collect(mqtt, region, locality, street, building)
+
+      response.set({
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Cache-Control': 'no-cache',
+      })
+
+      response.send(String(buildIcs(region, await collect(region, locality, street, building))))
+
       console.info(`[${new Date().toISOString()}] Schedule published`)
     } catch (error) {
       console.error(`[${new Date().toISOString()}] Oops`, error)
+      response.send(error.stack)
     }
+  })
 
-    await new Promise((r) => setTimeout(r, timeout))
-  }
+  app.listen(8080)
 }
 
 main()
