@@ -59,13 +59,21 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
 
    1. Hit `Create helper`, pick `Template` and then `Sensor`.
       - Name: `DTEK: Next Outage Start`
-      - State: `{{ as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'start_time')) | as_local }}`
+      - State:
+        ```jinja2
+        {% set outage = as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'start_time')) | as_local %}
+        {{ outage if outage > now() else None }}
+        ```
       - Device class: `Timestamp`
       - Hit `Submit`
 
    2. Hit `Create helper`, pick `Template` and then `Sensor`.
       - Name: `DTEK: Next Power Available`
-      - State: `{{ as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'end_time')) | as_local }}`
+      - State:
+        ```jinja2
+        {% set end = as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'end_time')) | as_local %}
+        {{ end if end > now() else None }}
+        ```
       - Device class: `Timestamp`
       - Hit `Submit`
 
