@@ -228,7 +228,7 @@ class Ics {
   }
 
   toString() {
-    return '\uFEFF' + [...this.lines, 'END:VCALENDAR'].join('\r\n') + '\r\n'
+    return [...this.lines, 'END:VCALENDAR'].join('\r\n') + '\r\n'
   }
 }
 
