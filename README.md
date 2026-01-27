@@ -17,43 +17,59 @@ The interval between the checks is configurable and can be set from 2 to 60 mins
 1. Go to [your HA calendars](https://my.home-assistant.io/redirect/calendar/) and make a new one, e.g. `DTEK Dnipro Outages 1.1`.
 
 2. Now go to [automations](https://my.home-assistant.io/redirect/automations/) and hit `Create atuomation`.
-  - Switch into the YAML mode.
-  - Paste this:
-    ```yaml
-    alias: DTEK Power Outages Calendar
-    mode: single
-    variables:
-      days: "{{ trigger.payload_json.schedule.days }}"
-      group: "{{ trigger.payload_json.group }}"
-    triggers:
-      - trigger: mqtt
-        options:
-          topic: dtek/power/outages/schedule
-          value_template: "{{ value_json.schedule is defined }}"
-    actions:
-      - alias: Loop over the days
-        repeat:
-          for_each: "{{ days }}"
-          sequence:
-            - variables:
-                day: "{{ repeat.item }}"
-            - alias: Loop over outages for the day
-              repeat:
-                for_each: "{{ day.intervals | selectattr('state', 'eq', 'outage') | list }}"
-                sequence:
-                  - alias: Create an event in
-                    data:
-                      summary: Power outage (group {{ group }})
-                      start_date_time: "{{ day.date }} {{ repeat.item.startsAt }}"
-                      end_date_time: "{{ day.date }} {{ repeat.item.endsAt }}"
-                    action: calendar.create_event
-                    target:
-                      entity_id: calendar.dtek_dnipro_outages_1_1
-    ```
-  - Switch back to the visual editor:
-    - hit `Loop over outages for the day`;
-    - hit `Create an event in`;
-    - select the calendar you have created before under the `Targets`.
+   - Switch into the YAML mode.
+   - Paste this:
+     ```yaml
+     alias: DTEK Power Outages Calendar
+     mode: single
+     variables:
+       days: "{{ trigger.payload_json.schedule.days }}"
+       group: "{{ trigger.payload_json.group }}"
+     triggers:
+       - trigger: mqtt
+         options:
+           topic: dtek/power/outages/schedule
+           value_template: "{{ value_json.schedule is defined }}"
+     actions:
+       - alias: Loop over the days
+         repeat:
+           for_each: "{{ days }}"
+           sequence:
+             - variables:
+                 day: "{{ repeat.item }}"
+             - alias: Loop over outages for the day
+               repeat:
+                 for_each: "{{ day.intervals | selectattr('state', 'eq', 'outage') | list }}"
+                 sequence:
+                   - alias: Create an event in
+                     data:
+                       summary: Power outage (group {{ group }})
+                       start_date_time: "{{ day.date }} {{ repeat.item.startsAt }}"
+                       end_date_time: "{{ day.date }} {{ repeat.item.endsAt }}"
+                     action: calendar.create_event
+                     target:
+                       entity_id: calendar.dtek_dnipro_outages_1_1
+     ```
+   - Switch back to the visual editor:
+     - hit `Loop over outages for the day`;
+     - hit `Create an event in`;
+     - select the calendar you have created before under the `Targets`.
+
+3. Optionally make sensors for the next outage and power availability.
+
+   Go to the [helpers](https://my.home-assistant.io/redirect/helpers/).
+
+   - Hit `Create helper`, pick `Template` and then `Sensor`.
+     - Name: `DTEK: Next Outage Start`
+     - State: `{{ as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'start_time')) | as_local }}`
+     - Device class: `Timestamp`
+     - Hit `Submit`
+
+   - Hit `Create helper`, pick `Template` and then `Sensor`.
+     - Name: `DTEK: Next Power Available`
+     - State: `{{ as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'end_time')) | as_local }}`
+     - Device class: `Timestamp`
+     - Hit `Submit`
 
 ## Installation
 
