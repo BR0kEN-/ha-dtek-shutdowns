@@ -2,7 +2,7 @@
 import express from 'express'
 import puppeteer from 'puppeteer'
 
-process.env.TZ = 'Europe/Kyiv'
+process.env.TZ = 'Europe/Kiev'
 
 /**
  * @param {Date} input
