@@ -13,9 +13,10 @@ configuration:
     description: The password for authenticating with the MQTT broker.
   region:
     name: Region
-    option:
+    options:
       dnem: Dnipro
       kem: Kyiv
+      krem: Kyiv Region
       oem: Odesa
   locality:
     name: Locality
