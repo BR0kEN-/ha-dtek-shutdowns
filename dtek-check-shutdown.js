@@ -206,8 +206,11 @@ async function collect(region, locality, street, building) {
 
 class Ics {
   constructor(name) {
+    const now = new Date()
+
     this.uid = 0
-    this.uidPrefix = `${name.replace(/\W/g, '')}${new Date().toISOString()}`
+    this.uidPrefix = `${name.replace(/\W/g, '')}${now.toISOString()}`
+    this.refreshDate = formatDate(now)
     this.lines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -233,6 +236,7 @@ class Ics {
     }
 
     description += `Updated at ${updatedAt}`
+    description += `\n Refreshed at ${this.refreshDate}`
 
     this.lines.push(
       'BEGIN:VEVENT',
