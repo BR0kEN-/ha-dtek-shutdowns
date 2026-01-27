@@ -2,8 +2,8 @@
 url: https://github.com/BR0kEN-/ha-dtek-shutdowns
 name: "DTEK Outages Checker"
 slug: "ha-dtek-shutdowns"
-version: "1.0.10"
-description: "Visits the DTEK website to check the outages for your address and publishes collected data via an MQTT."
+version: "1.0.11"
+description: "Visits the DTEK website to check the outages for your address and forms an ICS calendar."
 init: false
 arch:
   - armhf
@@ -14,19 +14,11 @@ arch:
 ports:
   8086/tcp: 8086
 options:
-  mqtt_host: "core-mosquitto"
-  mqtt_port: 1883
-  mqtt_username: "mosquitto"
-  mqtt_password: ""
   region: dnem
   locality: ""
   street: ""
   building: ""
 schema:
-  mqtt_host: "str"
-  mqtt_port: "port"
-  mqtt_username: "str"
-  mqtt_password: "password"
   region: "list(dnem|kem|krem|oem)"
   locality: "str"
   street: "str"

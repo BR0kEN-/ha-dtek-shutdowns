@@ -1,16 +1,4 @@
 configuration:
-  mqtt_host:
-    name: MQTT Host
-    description: The hostname or IP address of the MQTT broker (e.g., "core-mosquitto" for Home Assistant addon).
-  mqtt_port:
-    name: MQTT Port
-    description: The port number of the MQTT broker (typically 1883 for unencrypted, 8883 for encrypted).
-  mqtt_username:
-    name: MQTT Username
-    description: The username for authenticating with the MQTT broker.
-  mqtt_password:
-    name: MQTT Password
-    description: The password for authenticating with the MQTT broker.
   region:
     name: Region
     options:
