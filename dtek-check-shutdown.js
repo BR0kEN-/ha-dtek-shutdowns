@@ -4,6 +4,10 @@ import puppeteer from 'puppeteer'
 
 process.env.TZ = 'Europe/Kiev'
 
+function pad(n) {
+  return String(n).padStart(2, '0')
+}
+
 /**
  * @param {Date} input
  * @param {boolean} noTime
@@ -16,6 +20,17 @@ function formatDate(input, { noTime = false } = {}) {
 }
 
 function formatDateIcs(input) {
+  // Handle hour 24 (midnight) by converting to next day 00:00.
+  if (input.includes(' 24:')) {
+    const [dateStr, timeStr] = input.split(' ')
+    const date = new Date(dateStr)
+
+    // Next day.
+    date.setDate(date.getDate() + 1)
+
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${timeStr.replace('24:', '00').replaceAll(':', '')}`
+  }
+
   return input.replace(' ', 'T').replace(/[-:]/g, '')
 }
 
@@ -33,10 +48,6 @@ function fixTimeDate(input) {
   const [time, date] = input.split(' ')
 
   return formatDateTime(date, time)
-}
-
-function pad(n) {
-  return String(n).padStart(2, '0')
 }
 
 function buildIntervals(hours) {
