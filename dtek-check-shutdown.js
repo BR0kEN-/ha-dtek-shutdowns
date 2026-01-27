@@ -16,7 +16,7 @@ function formatDate(input, { noTime = false } = {}) {
 }
 
 function formatDateIcs(input) {
-  return `${input.replace(' ', 'T').replace(/[-:]/g, '')}`
+  return input.replace(' ', 'T').replace(/[-:]/g, '')
 }
 
 function formatDateTime(date, time) {
@@ -218,7 +218,7 @@ class Ics {
     this.lines.push(
       'BEGIN:VEVENT',
       `UID:${this.uidPrefix}@${this.uid++}`,
-      `DTSTAMP;TZID=${process.env.TZ}:${formatDateIcs(updatedAt)}`,
+      `DTSTAMP:${formatDateIcs(updatedAt)}Z`,
       `DTSTART;TZID=${process.env.TZ}:${formatDateIcs(startsAt)}`,
       `DTEND;TZID=${process.env.TZ}:${formatDateIcs(endsAt)}`,
       `SUMMARY:${summary}`,
