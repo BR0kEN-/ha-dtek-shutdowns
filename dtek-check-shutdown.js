@@ -230,13 +230,13 @@ class Ics {
 
   addEvent(summary, updatedAt, startsAt, endsAt, description) {
     if (description) {
-      description += '\n '
+      description += '\\n'
     } else {
       description = ''
     }
 
     description += `Updated at ${updatedAt}`
-    description += `\n Refreshed at ${this.refreshDate}`
+    description += `\\nRefreshed at ${this.refreshDate}`
 
     this.lines.push(
       'BEGIN:VEVENT',
