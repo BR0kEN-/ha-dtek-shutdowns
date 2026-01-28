@@ -2,11 +2,7 @@
 import express from 'express'
 import puppeteer from 'puppeteer'
 
-process.env.TZ = 'Europe/Kiev'
-
-function pad(n) {
-  return String(n).padStart(2, '0')
-}
+process.env.TZ = 'Europe/Kyiv'
 
 /**
  * @param {Date} input
@@ -19,69 +15,83 @@ function formatDate(input, { noTime = false } = {}) {
   return `${Y}-${m}-${d}${noTime ? '' : ` ${time}`}`
 }
 
+/**
+ * @param {Date} input
+ * @return {string}
+ */
 function formatDateIcs(input) {
-  // Handle hour 24 (midnight) by converting to next day 00:00.
-  if (input.includes(' 24:')) {
-    const [dateStr, timeStr] = input.split(' ')
-    const date = new Date(dateStr)
-
-    // Next day.
-    date.setDate(date.getDate() + 1)
-
-    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${timeStr.replace('24:', '00').replaceAll(':', '')}`
-  }
-
-  return input.replace(' ', 'T').replace(/[-:]/g, '')
+  return formatDate(input)
+    .replace(' ', 'T')
+    .replace(/[-:]/g, '')
 }
 
-function formatDateTime(date, time) {
-  const [d, m, Y] = date.split('.')
+/**
+ * @param {string} date
+ * @param {string} [time]
+ * @return {Date}
+ */
+function toDatetime(date, time) {
+  if (time === undefined && date.includes(' ')) {
+    const [a, b] = date.split(' ')
 
-  return formatDate(new Date(`${Y}-${m}-${d} ${time}`))
-}
-
-function fixDateTime(input) {
-  return formatDateTime(...input.split(' '))
-}
-
-function fixTimeDate(input) {
-  const [time, date] = input.split(' ')
-
-  return formatDateTime(date, time)
-}
-
-function buildIntervals(hours) {
-  const segments = []
-  const intervals = []
-
-  for (let h = 1; h <= 24; h++) {
-    const startHour = h - 1
-    const h1 = `${pad(h)}:00:00`
-    const h0 = `${pad(startHour)}:00:00`
-    const h30 = `${pad(startHour)}:30:00`
-
-    switch (hours[h]) {
-      case 'no':
-        segments.push({ startsAt: h0, endsAt: h1 })
-        break
-
-      case 'first':
-        segments.push({ startsAt: h0, endsAt: h30 })
-        break
-
-      case 'second':
-        segments.push({ startsAt: h30, endsAt: h1 })
-        break
+    if (a.includes(':')) {
+      date = b
+      time = a
+    } else {
+      date = a
+      time = b
     }
   }
 
-  for (const s of segments) {
-    const last = intervals.at(-1)
+  const [d, m, Y] = date.split('.')
 
-    if (last && last.state === s.state && last.endsAt === s.startsAt) {
-      last.endsAt = s.endsAt
-    } else {
-      intervals.push({ ...s })
+  return new Date(`${Y}-${m}-${d} ${time}`)
+}
+
+function buildIntervals(days) {
+  const intervals = []
+
+  for (const { timestamp, hours } of days) {
+    const dayStart = new Date(timestamp * 1000)
+    dayStart.setHours(0, 0, 0, 0)
+
+    for (let h = 1; h <= 24; h++) {
+      const startMin = (h - 1) * 60
+      const endMin = h * 60
+      const half = startMin + 30
+      let seg = null
+
+      switch (hours[h]) {
+        case 'no':
+          seg = { startMin, endMin }
+          break
+
+        case 'first':
+          seg = { startMin, endMin: half }
+          break
+
+        case 'second':
+          seg = { startMin: half, endMin }
+          break
+
+        default:
+          continue
+      }
+
+      const start = new Date(dayStart)
+      start.setMinutes(start.getMinutes() + seg.startMin)
+
+      const end = new Date(dayStart)
+      end.setMinutes(end.getMinutes() + seg.endMin)
+
+      const last = intervals.at(-1)
+
+      // Merge contiguous outages (including across midnight).
+      if (last && last.end.getTime() === start.getTime()) {
+        last.end = end
+      } else {
+        intervals.push({ start, end })
+      }
     }
   }
 
@@ -157,19 +167,16 @@ async function getShutdown(page, catchResponse, region, locality, street, buildi
     group,
     shutdown: null,
     schedule: {
-      updatedAt: fixDateTime(schedule.updatedAt),
-      days: schedule.days.map(({ timestamp, hours }) => ({
-        date: formatDate(new Date(timestamp * 1000), { noTime: true }),
-        intervals: buildIntervals(hours),
-      })),
+      updatedAt: toDatetime(schedule.updatedAt),
+      events: buildIntervals(schedule.days),
     },
   }
 
   if (data?.type) {
     result.shutdown = {
-      updatedAt: fixTimeDate(updateTimestamp),
-      startedAt: fixTimeDate(data.start_date),
-      endsAt: fixTimeDate(data.end_date),
+      updatedAt: toDatetime(updateTimestamp),
+      startedAt: toDatetime(data.start_date),
+      endsAt: toDatetime(data.end_date),
       reason: (() => {
         switch (Number(data.type)) {
           case 1:
@@ -259,26 +266,25 @@ function buildIcs(region, data) {
   const ics = new Ics(`DTEK ${region.toUpperCase()} Outages ${data.group}`)
   const eventName = `Power outage (group ${data.group})`
 
-  for (const day of data.schedule.days) {
-    for (const interval of day.intervals) {
-      ics.addEvent(
-        eventName,
-        data.schedule.updatedAt,
-        day.date + ' ' + interval.startsAt,
-        day.date + ' ' + interval.endsAt,
-      )
-    }
-  }
-
-  if (data.shutdown) {
+  for (const event of data.schedule.events) {
     ics.addEvent(
       eventName,
-      data.shutdown.updatedAt,
-      data.shutdown.startedAt,
-      data.shutdown.endsAt,
-      data.shutdown.reason,
+      data.schedule.updatedAt,
+      event.start,
+      event.end,
     )
   }
+
+  // @todo: What to do with this? It has a useful reason but creates a dup.
+  // if (data.shutdown) {
+  //   ics.addEvent(
+  //     eventName,
+  //     data.shutdown.updatedAt,
+  //     data.shutdown.startedAt,
+  //     data.shutdown.endsAt,
+  //     data.shutdown.reason,
+  //   )
+  // }
 
   return ics
 }
@@ -289,7 +295,7 @@ async function main() {
 
   app.get('/dtek-shutdowns.ics', async (request, response) => {
     try {
-      console.info(`[${new Date().toISOString()}] Collecting the data`)
+      console.info(`[${new Date().toISOString()}] Collecting`)
 
       response.set({
         'Content-Type': 'text/calendar; charset=utf-8',
@@ -298,7 +304,7 @@ async function main() {
 
       response.send(String(buildIcs(region, await collect(region, locality, street, building))))
 
-      console.info(`[${new Date().toISOString()}] Schedule published`)
+      console.info(`[${new Date().toISOString()}] Ok`)
     } catch (error) {
       console.error(`[${new Date().toISOString()}] Oops`, error)
       response.send(error.stack)
