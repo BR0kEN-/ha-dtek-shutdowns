@@ -235,15 +235,15 @@ class Ics {
     ]
   }
 
-  addEvent(summary, updatedAt, startsAt, endsAt, description) {
+  addEvent(summary, updatedAt, startsAt, endsAt, description, location) {
     if (description) {
-      description += '\\n'
+      description += '\n '
     } else {
       description = ''
     }
 
-    description += `Updated at ${updatedAt}`
-    description += `\\nRefreshed at ${this.refreshDate}`
+    description += `Updated at ${formatDate(updatedAt)}`
+    description += `\n Refreshed at ${this.refreshDate}`
 
     this.lines.push(
       'BEGIN:VEVENT',
@@ -251,10 +251,20 @@ class Ics {
       `DTSTAMP:${formatDateIcs(updatedAt)}Z`,
       `DTSTART;TZID=${process.env.TZ}:${formatDateIcs(startsAt)}`,
       `DTEND;TZID=${process.env.TZ}:${formatDateIcs(endsAt)}`,
-      `SUMMARY:${summary}`,
-      `DESCRIPTION:${description}`,
+      `SUMMARY:${this.escapeIcsText(summary)}`,
+      `LOCATION:${this.escapeIcsText(location)}`,
+      `DESCRIPTION:${this.escapeIcsText(description)}`,
       'END:VEVENT',
     )
+  }
+
+  escapeIcsText(text) {
+    return text
+      // Backslash first!
+      .replaceAll('\\', '\\\\')
+      .replaceAll(';', '\\;')
+      .replaceAll(',', '\\,')
+      .replaceAll('\n', '\\n')
   }
 
   toString() {
@@ -262,7 +272,7 @@ class Ics {
   }
 }
 
-function buildIcs(region, data) {
+function buildIcs(region, location, data) {
   const ics = new Ics(`DTEK ${region.toUpperCase()} Outages ${data.group}`)
   const eventName = `Power outage (group ${data.group})`
 
@@ -272,6 +282,7 @@ function buildIcs(region, data) {
       data.schedule.updatedAt,
       event.start,
       event.end,
+      location,
     )
   }
 
@@ -302,7 +313,15 @@ async function main() {
         'Cache-Control': 'no-cache',
       })
 
-      response.send(String(buildIcs(region, await collect(region, locality, street, building))))
+      response.send(
+        String(
+          buildIcs(
+            region,
+            `${building} ${street}, ${locality}`,
+            await collect(region, locality, street, building),
+          ),
+        ),
+      )
 
       console.info(`[${new Date().toISOString()}] Ok`)
     } catch (error) {

@@ -49,35 +49,85 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
           data:
             entity_id:
               - calendar.dtek_dnipro_outages_1_1
+        - action: calendar.get_events
+          metadata: {}
+          target:
+            entity_id: calendar.dtek_dnipro_outages_1_1
+          data:
+            duration:
+              hours: 48
+          response_variable: upcoming_events
+        - action: input_datetime.set_datetime
+          target:
+            entity_id: input_datetime.dtek_next_outage
+          data:
+            timestamp: >-
+              {% set data = namespace(found=None) %}
+              {% set now_ts = now().timestamp() %}
+
+              {% for e in upcoming_events['calendar.dtek_dnipro_outages_1_1'].events %}
+                {% if as_timestamp(e.start) > now_ts %}
+                  {%- set data.found = e.start %}
+                  {%- break %}
+                {% endif %}
+              {% endfor -%}
+
+              {{ as_timestamp(data.found) if data.found else None }}
+        - action: input_datetime.set_datetime
+          target:
+            entity_id: input_datetime.dtek_next_connectivity
+          data:
+            timestamp: >-
+              {% set data = namespace(found=None) %}
+              {% set now_ts = now().timestamp() %}
+
+              {% for e in upcoming_events['calendar.dtek_dnipro_outages_1_1'].events %}
+                {% if as_timestamp(e.start) <= now_ts < as_timestamp(e.end) %}
+                  {%- set data.found = e.end %}
+                  {%- break %}
+                {% endif %}
+              {% endfor -%}
+
+              {{ as_timestamp(data.found) if data.found else None }}
       ```
 
-      Remember to update the calendar's entity ID and the update interval.
+      Remember to update the calendar's entity ID and change the interval.
 
 3. Optionally make sensors for the next outage and power availability.
 
    Go to the [helpers](https://my.home-assistant.io/redirect/helpers/):
 
-   1. Hit `Create helper`, pick `Template` and then `Sensor`.
-      - Name: `DTEK: Next Outage Start`
+    1. Hit `Create helper` and pick `Date and/or time`.
+        - Name: `DTEK: Next Outage`
+        - Icon: `mdi:power-plug-off`
+        - Type: `Date and time`
+        - Hit `Create`
+
+    2. Hit `Create helper` and pick `Date and/or time`.
+        - Name: `DTEK: Next Connectivity`
+        - Icon: `mdi:power-plug`
+        - Type: `Date and time`
+        - Hit `Create`
+
+   3. Hit `Create helper`, pick `Template` and then `Sensor`.
+      - Name: `DTEK: Next Outage`
       - State:
         ```jinja2
-        {% set outage = as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'start_time')) | as_local %}
-        {{ outage if outage > now() else None }}
+        {{ as_datetime(states('input_datetime.dtek_next_outage')) | as_local }}
         ```
       - Device class: `Timestamp`
       - Hit `Submit`
 
-   2. Hit `Create helper`, pick `Template` and then `Sensor`.
-      - Name: `DTEK: Next Power Available`
+   4. Hit `Create helper`, pick `Template` and then `Sensor`.
+      - Name: `DTEK: Next Connectivity`
       - State:
         ```jinja2
-        {% set end = as_datetime(state_attr('calendar.dtek_dnipro_outages_1_1', 'end_time')) | as_local %}
-        {{ end if end > now() else None }}
+        {{ as_datetime(states('input_datetime.dtek_next_connectivity')) | as_local }}
         ```
       - Device class: `Timestamp`
       - Hit `Submit`
 
-   Remember to update the calendar's entity ID.
+   Note the entity IDs as they depend on the name you choose. You should be good if simply copy-pasted from this tutorial. Otherwise, look for the right IDs.
 
 ## Update
 
