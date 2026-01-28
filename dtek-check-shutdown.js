@@ -318,7 +318,7 @@ async function main() {
         String(
           buildIcs(
             region,
-            `${building} ${street}, ${locality}`,
+            `${locality}, ${street} ${building}`,
             await collect(region, locality, street, building),
           ),
         ),
