@@ -235,7 +235,7 @@ class Ics {
     ]
   }
 
-  addEvent(summary, updatedAt, startsAt, endsAt, description, location) {
+  addEvent(summary, updatedAt, startsAt, endsAt, location, description) {
     if (description) {
       description += '\n '
     } else {
@@ -293,6 +293,7 @@ function buildIcs(region, location, data) {
   //     data.shutdown.updatedAt,
   //     data.shutdown.startedAt,
   //     data.shutdown.endsAt,
+  //     location,
   //     data.shutdown.reason,
   //   )
   // }
