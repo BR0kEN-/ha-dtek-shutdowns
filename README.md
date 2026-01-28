@@ -13,7 +13,7 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
 ## Install
 
 1. [![Install](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FBR0kEN-%2Fha-dtek-shutdowns)
-2. Install & configure the address to monitor.
+2. Install & configure the address to monitor. It should be the one you enter at https://www.dtek-dnem.com.ua/ua/shutdowns (replace `dnem` with your region).
 3. Turn on `Autoupdate` & `Watchdog`.
 4. Start and check logs to ensure it's running.
 
