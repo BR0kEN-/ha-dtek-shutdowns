@@ -306,17 +306,27 @@ function buildIcs(region, location, data) {
 }
 
 async function main() {
-  const [,, region, locality, street, building] = process.argv
+  const [,, region, locality, street, building, options] = process.argv
   const app = express()
   let pendingResponses = []
   let prevResult
   let promise
 
-  async function query(response, contentType, property) {
+  function storeOutageMetadata(metadata) {
+    if (options?.includes('store-metadata')) {
+      try {
+        writeFileSync('/share/dtek-outage-metadata.json', JSON.stringify(metadata), 'utf-8')
+      } catch (error) {
+        console.error('Failed to write outage metadata file', error)
+      }
+    }
+  }
+
+  async function query(response, contentType) {
     const reqId = Math.random().toString(36).substring(7)
     console.info(`[${reqId}] Request received at ${new Date().toISOString()}`)
 
-    pendingResponses.push({ response, contentType, property, reqId })
+    pendingResponses.push({ response, contentType, reqId })
     console.info(`[${reqId}] Queue size: ${pendingResponses.length}`)
 
     if (promise) {
@@ -325,25 +335,18 @@ async function main() {
       console.info(`[${reqId}] Starting new collection...`)
       promise = collect(region, locality, street, building)
         .then((result) => {
-          prevResult = {
-            calendar: String(buildIcs(region, `${locality}, ${street} ${building}`, result)),
-            shutdown: JSON.stringify(
-              !result.shutdown
-                ? null
-                : {
-                  ...result.shutdown,
-                  updatedAt: formatDate(result.shutdown.updatedAt),
-                  startedAt: formatDate(result.shutdown.startedAt),
-                  endsAt: formatDate(result.shutdown.endsAt),
-                },
-            ),
-          }
+          prevResult = String(buildIcs(region, `${locality}, ${street} ${building}`, result))
 
-          try {
-            writeFileSync('/share/dtek-shutdown-reason.json', prevResult.shutdown, 'utf-8')
-          } catch (error) {
-            console.error('Failed to write shutdown file', error)
-          }
+          storeOutageMetadata({
+            shutdown: !result.shutdown
+              ? null
+              : {
+                updatedAt: formatDate(result.shutdown.updatedAt),
+                startedAt: formatDate(result.shutdown.startedAt),
+                endsAt: formatDate(result.shutdown.endsAt),
+                reason: result.shutdown.reason,
+              },
+          })
 
           console.info(`[${new Date().toISOString()}] Collection completed`)
 
@@ -352,14 +355,7 @@ async function main() {
         .catch((error) => {
           console.error(`[${new Date().toISOString()}] Oops`, error)
 
-          if (prevResult) {
-            return prevResult
-          }
-
-          return {
-            calendar: error.stack,
-            shutdown: error.stack,
-          }
+          return prevResult ? prevResult : error.stack
         })
         .finally(() => {
           const responses = pendingResponses
@@ -369,14 +365,14 @@ async function main() {
 
           console.info(`Sending responses to ${responses.length} clients`)
 
-          for (const { response, contentType, property, reqId } of responses) {
+          for (const { response, contentType, reqId } of responses) {
             console.info(`[${reqId}] Sending response at ${new Date().toISOString()}`)
             if (!response.headersSent) {
               response.set({
                 'Content-Type': contentType,
                 'Cache-Control': 'no-cache',
               })
-              response.send(prevResult[property])
+              response.send(prevResult)
             }
           }
         })
@@ -388,9 +384,10 @@ async function main() {
   }
 
   app.get('/dtek-shutdowns.ics', async (request, response) => {
-    await query(response, 'text/calendar; charset=utf-8', 'calendar')
+    await query(response, 'text/calendar; charset=utf-8')
   })
 
+  storeOutageMetadata({ shutdown: null })
   app.listen(8084, '0.0.0.0')
 }
 
