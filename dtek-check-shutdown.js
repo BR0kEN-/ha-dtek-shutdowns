@@ -197,7 +197,7 @@ async function getShutdown(page, catchResponse, region, locality, street, buildi
 
 async function collect(region, locality, street, building) {
   const browser = await puppeteer.launch({
-    headless: !true,
+    headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
     args: [
       '--no-sandbox',
