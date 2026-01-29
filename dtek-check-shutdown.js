@@ -197,12 +197,19 @@ async function getShutdown(page, catchResponse, region, locality, street, buildi
 
 async function collect(region, locality, street, building) {
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: !true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      '--start-maximized',
+    ],
   })
 
   const [page] = await browser.pages()
+  await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36')
   const data = await getShutdown(page, setupResponseCatcher(page), region, locality, street, building)
 
   console.debug(JSON.stringify(data, null, 4))
@@ -235,15 +242,23 @@ class Ics {
     ]
   }
 
+  /**
+   * @param {string} summary
+   * @param {Date} updatedAt
+   * @param {Date} startsAt
+   * @param {Date} endsAt
+   * @param {string} location
+   * @param {string} [description]
+   */
   addEvent(summary, updatedAt, startsAt, endsAt, location, description) {
     if (description) {
-      description += '\n '
+      description += '\n'
     } else {
       description = ''
     }
 
     description += `Updated at ${formatDate(updatedAt)}`
-    description += `\n Refreshed at ${this.refreshDate}`
+    description += `\nRefreshed at ${this.refreshDate}`
 
     this.lines.push(
       'BEGIN:VEVENT',
@@ -286,49 +301,91 @@ function buildIcs(region, location, data) {
     )
   }
 
-  // @todo: What to do with this? It has a useful reason but creates a dup.
-  // if (data.shutdown) {
-  //   ics.addEvent(
-  //     eventName,
-  //     data.shutdown.updatedAt,
-  //     data.shutdown.startedAt,
-  //     data.shutdown.endsAt,
-  //     location,
-  //     data.shutdown.reason,
-  //   )
-  // }
-
   return ics
 }
 
 async function main() {
   const [,, region, locality, street, building] = process.argv
   const app = express()
+  let pendingResponses = []
+  let prevResult
+  let promise
+
+  async function query(response, contentType, property) {
+    const reqId = Math.random().toString(36).substring(7)
+    console.info(`[${reqId}] Request received at ${new Date().toISOString()}`)
+
+    pendingResponses.push({ response, contentType, property, reqId })
+    console.info(`[${reqId}] Queue size: ${pendingResponses.length}`)
+
+    if (promise) {
+      console.info(`[${reqId}] Reusing existing collection promise`)
+    } else {
+      console.info(`[${reqId}] Starting new collection...`)
+      promise = collect(region, locality, street, building)
+        .then((result) => {
+          prevResult = {
+            calendar: String(buildIcs(region, `${locality}, ${street} ${building}`, result)),
+            shutdown: JSON.stringify(
+              !result.shutdown
+                ? null
+                : {
+                  ...result.shutdown,
+                  updatedAt: formatDate(result.shutdown.updatedAt),
+                  startedAt: formatDate(result.shutdown.startedAt),
+                  endsAt: formatDate(result.shutdown.endsAt),
+                },
+            ),
+          }
+
+          console.info(`[${new Date().toISOString()}] Collection completed`)
+
+          return prevResult
+        })
+        .catch((error) => {
+          console.error(`[${new Date().toISOString()}] Oops`, error)
+
+          if (prevResult) {
+            return prevResult
+          }
+
+          return {
+            calendar: error.stack,
+            shutdown: error.stack,
+          }
+        })
+        .finally(() => {
+          const responses = pendingResponses
+
+          pendingResponses = []
+          promise = undefined
+
+          console.info(`Sending responses to ${responses.length} clients`)
+
+          for (const { response, contentType, property, reqId } of responses) {
+            console.info(`[${reqId}] Sending response at ${new Date().toISOString()}`)
+            if (!response.headersSent) {
+              response.set({
+                'Content-Type': contentType,
+                'Cache-Control': 'no-cache',
+              })
+              response.send(prevResult[property])
+            }
+          }
+        })
+    }
+
+    console.info(`[${reqId}] Waiting for collection...`)
+    await promise
+    console.info(`[${reqId}] Done waiting at ${new Date().toISOString()}`)
+  }
 
   app.get('/dtek-shutdowns.ics', async (request, response) => {
-    try {
-      console.info(`[${new Date().toISOString()}] Collecting`)
+    await query(response, 'text/calendar; charset=utf-8', 'calendar')
+  })
 
-      response.set({
-        'Content-Type': 'text/calendar; charset=utf-8',
-        'Cache-Control': 'no-cache',
-      })
-
-      response.send(
-        String(
-          buildIcs(
-            region,
-            `${locality}, ${street} ${building}`,
-            await collect(region, locality, street, building),
-          ),
-        ),
-      )
-
-      console.info(`[${new Date().toISOString()}] Ok`)
-    } catch (error) {
-      console.error(`[${new Date().toISOString()}] Oops`, error)
-      response.send(error.stack)
-    }
+  app.get('/shutdown-reason', async (request, response) => {
+    await query(response, 'application/json', 'shutdown')
   })
 
   app.listen(8084, '0.0.0.0')
