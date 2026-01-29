@@ -1,4 +1,5 @@
 // Reverse-engineered from https://www.dtek-dnem.com.ua/src/js/static/discon-schedule.js
+import { writeFileSync } from 'node:fs'
 import express from 'express'
 import puppeteer from 'puppeteer'
 
@@ -338,6 +339,12 @@ async function main() {
             ),
           }
 
+          try {
+            writeFileSync('/share/dtek-shutdown-reason.json', prevResult.shutdown, 'utf-8')
+          } catch (error) {
+            console.error('Failed to write shutdown file', error)
+          }
+
           console.info(`[${new Date().toISOString()}] Collection completed`)
 
           return prevResult
@@ -382,10 +389,6 @@ async function main() {
 
   app.get('/dtek-shutdowns.ics', async (request, response) => {
     await query(response, 'text/calendar; charset=utf-8', 'calendar')
-  })
-
-  app.get('/shutdown-reason', async (request, response) => {
-    await query(response, 'application/json', 'shutdown')
   })
 
   app.listen(8084, '0.0.0.0')
