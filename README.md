@@ -23,7 +23,7 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
 
    1. Name it, i.e. `DTEK Dnipro Outages 1.1`.
 
-   2. Set the calendar URL to `http://<YOUR_HA_URL>:8086/dtek-shutdowns.ics`.
+   2. Set the calendar URL to `http://<YOUR_HA_URL>:8084/dtek-shutdowns.ics`.
 
 2. Configure custom polling interval:
    1. Disable default polling:
@@ -66,13 +66,15 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
               {% set now_ts = now().timestamp() %}
 
               {% for e in upcoming_events['calendar.dtek_dnipro_outages_1_1'].events %}
-                {% if as_timestamp(e.start) > now_ts %}
-                  {%- set data.found = e.start %}
+                {%- set start = as_timestamp(e.start) %}
+
+                {% if start > now_ts %}
+                  {%- set data.found = start %}
                   {%- break %}
                 {% endif %}
               {% endfor -%}
 
-              {{ as_timestamp(data.found) if data.found else None }}
+              {{ data.found }}
         - action: input_datetime.set_datetime
           target:
             entity_id: input_datetime.dtek_next_connectivity
@@ -82,13 +84,19 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
               {% set now_ts = now().timestamp() %}
 
               {% for e in upcoming_events['calendar.dtek_dnipro_outages_1_1'].events %}
-                {% if as_timestamp(e.start) <= now_ts < as_timestamp(e.end) %}
-                  {%- set data.found = e.end %}
+                {%- set start = as_timestamp(e.start) %}
+                {%- set end = as_timestamp(e.end) %}
+
+                {% if start <= now_ts < end %}
+                  {%- set data.found = end %}
+                  {%- break %}
+                {% elif start > now_ts %}
+                  {%- set data.found = end %}
                   {%- break %}
                 {% endif %}
               {% endfor -%}
 
-              {{ as_timestamp(data.found) if data.found else None }}
+              {{ data.found }}
       ```
 
       Remember to update the calendar's entity ID and change the interval.

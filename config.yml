@@ -2,7 +2,7 @@
 url: https://github.com/BR0kEN-/ha-dtek-shutdowns
 name: "DTEK Outages Checker"
 slug: "ha-dtek-shutdowns"
-version: "1.2.3"
+version: "1.2.4"
 description: "Visits the DTEK website to check the outages for your address and forms an ICS calendar."
 init: false
 arch:
@@ -12,7 +12,7 @@ arch:
   - amd64
   - i386
 ports:
-  8086/tcp: 8086
+  8084/tcp: 8084
 options:
   region: dnem
   locality: ""
