@@ -209,14 +209,17 @@ async function collect(region, locality, street, building) {
     ],
   })
 
-  const [page] = await browser.pages()
-  await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36')
-  const data = await getShutdown(page, setupResponseCatcher(page), region, locality, street, building)
+  try {
+    const [page] = await browser.pages()
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36')
+    const data = await getShutdown(page, setupResponseCatcher(page), region, locality, street, building)
 
-  console.debug(JSON.stringify(data, null, 4))
-  await browser.close()
+    console.debug(JSON.stringify(data, null, 4))
 
-  return data
+    return data
+  } finally {
+    await browser.close()
+  }
 }
 
 class Ics {
