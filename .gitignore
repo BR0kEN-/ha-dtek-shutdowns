@@ -1,18 +1,17 @@
 /*
 .*
 
-!.git*
+# All dirs.
+!*/
+# But:
+/node_modules/
 
-!/config.yml
+!.git*
+!*.yaml
+!*.yml
+
 !/Dockerfile
 !/dtek-check-shutdown.js
 !/package*.json
 !/README.md
-!/repository.yaml
 !/run.sh
-
-!/docs/
-
-!/translations/
-/translations/*
-!/translations/*.yaml

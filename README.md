@@ -2,140 +2,71 @@
 
 ## Why does this exist?
 
-Yasno has proven to be unreliable. While they offer a convenient API, their schedule updates are not synchronized with DTEK, which is the actual source of truth as it is directly guided by NEC Ukrenergo.
+I initially used [ha-yasno-outages](https://github.com/denysdovhan/ha-yasno-outages), which you may also consider (offers EN, UK, and NL locales and monitoring of multiple addresses). Yasno does expose a REST API - something the DTEK portal lacks - but in practice that API often serves delayed data. It appears to be refreshed on a coarse schedule, so meaningful updates are not propagated promptly. As a result, the API looks good from an integration standpoint but is of limited operational value: outage schedules can change during the day, and the updated information may arrive too late to be useful. By that point, automations relying on the schedule - battery discharge planning, load shifting, etc. - have already acted on outdated assumptions.
 
-Previously, I used [ha-yasno-outages](https://github.com/denysdovhan/ha-yasno-outages). However, besides Yasno’s data often being outdated, the component itself has a fixed 15-minute delay before fetching updates (though this may be improved with [this pull request](https://github.com/denysdovhan/ha-yasno-outages/pull/115)).
+<details>
+  <summary>🖼 <strong>Screenshots</strong></summary>
+
+<h3>Calendar</h3>
+
+![Calendar](screenshots/calendar.png)
+
+<h3>Sensor details: Next connectivity</h3>
+
+![Sensor details: Next connectivity](screenshots/sensor-details-next-connectivity.png)
+
+<h3>Sensor details: Outage reason</h3>
+
+![Sensor details: Outage reason](screenshots/sensor-details-outage-reason.png)
+
+<h3>Sensors on the dashboard</h3>
+
+![Sensors on the dashboard](screenshots/sensors-on-the-dash.png)
+
+<h3>Telegram Bot Command: Schedule</h3>
+
+![Telegram Bot Command: Schedule](screenshots/tg-bot-command-schedule.png)
+
+<h3>Telegram Bot Commands: Next On/Off</h3>
+
+![Telegram Bot Commands: Next On/Off](screenshots/tg-bot-commands-grid-on-off.png)
+</details>
 
 ## How it works?
 
-A Puppeteer-controlled browser visits the DTEK website when the API endpoint is accessed, scrapes the outage schedule for a configured address, and returns an `*.ics` calendar. This calendar is then imported into Home Assistant via the [Remote calendar](https://www.home-assistant.io/integrations/remote_calendar/) integration. No history is preserved—once the schedule changes or the current day ends, the events disappear.
+A Puppeteer-controlled browser visits the DTEK website when the API endpoint is accessed, scrapes the outage schedule for a configured address, and returns an `*.ics` calendar. This calendar is then imported into Home Assistant via the [Remote calendar](https://www.home-assistant.io/integrations/remote_calendar/) integration. No history is preserved-once the schedule changes or the current day ends, the events disappear.
+
+## Before you begin!
+
+- **Configuration complexity:** advanced. This assumes you’re comfortable with Home Assistant YAML, helpers, automations, and basic Jinja2 templating. There are no copy-paste shortcuts here, and things won’t work instantly.
+- **Resources:** this is a Docker-based add-on that launches Chromium. It’s relatively resource-intensive, especially with the default 3-minute polling interval.
+- **Scope:** supports outage schedules for a single address. Multi-address support is out of scope.
+- **Language support:** English-only. No translations are planned.
 
 ## Install
 
 1. [![Install](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FBR0kEN-%2Fha-dtek-shutdowns)
-2. Install & configure the address to monitor. It should be the one you enter at https://www.dtek-dnem.com.ua/ua/shutdowns (replace `dnem` with your region).
+2. Install & configure the address to monitor. It should be the one you enter at https://www.dtek-dnem.com.ua/ua/shutdowns (use your region instead of the `dnem` if you're not in Dnipro).
 3. Turn on `Autoupdate` & `Watchdog`.
 4. Start and check logs to ensure it's running.
 
 ## Configure
 
 1. Add the [Remote Calendar](https://my.home-assistant.io/redirect/config_flow_start?domain=remote_calendar) integration:
+   1. Name it, i.e. `DTEK Dnipro Outages 1.1`
+   2. Set the calendar URL to `http://127.0.0.1:8084/dtek-shutdowns.ics`
 
-   1. Name it, i.e. `DTEK Dnipro Outages 1.1`.
+2. Disable default polling:
+   1. Go to [devices & services](https://my.home-assistant.io/redirect/integrations)
+   2. Hit `Remote Calendar`
+   3. Find created calendar and open its contextual menu (three-dots button on the right)
+   4. Hit `System options`
+   5. Toggle off `Enable polling for changes`
+   6. Hit `Update`
 
-   2. Set the calendar URL to `http://<YOUR_HA_URL>:8084/dtek-shutdowns.ics`.
-
-2. Configure custom polling interval:
-   1. Disable default polling:
-      - Go to [devices & services](https://my.home-assistant.io/redirect/integrations);
-      - hit `Remote Calendar`;
-      - find created calendar and open its contextual menu (three-dots button on the right);
-      - hit `System options`;
-      - toggle off `Enable polling for changes`;
-      - hit `Update`.
-
-   2. Create the automation with the interval you like:
-      ```yaml
-      mode: single
-      alias: DTEK Outages Calendar Update
-      description: ""
-      triggers:
-        - trigger: time_pattern
-          minutes: /3
-      conditions: []
-      actions:
-        - action: homeassistant.update_entity
-          metadata: {}
-          data:
-            entity_id:
-              - calendar.dtek_dnipro_outages_1_1
-        - action: calendar.get_events
-          metadata: {}
-          target:
-            entity_id: calendar.dtek_dnipro_outages_1_1
-          data:
-            duration:
-              hours: 48
-          response_variable: upcoming_events
-        - action: input_datetime.set_datetime
-          target:
-            entity_id: input_datetime.dtek_next_outage
-          data:
-            timestamp: >-
-              {% set data = namespace(found=None) %}
-              {% set now_ts = now().timestamp() %}
-
-              {% for e in upcoming_events['calendar.dtek_dnipro_outages_1_1'].events %}
-                {%- set start = as_timestamp(e.start) %}
-
-                {% if start > now_ts %}
-                  {%- set data.found = start %}
-                  {%- break %}
-                {% endif %}
-              {% endfor -%}
-
-              {{ data.found }}
-        - action: input_datetime.set_datetime
-          target:
-            entity_id: input_datetime.dtek_next_connectivity
-          data:
-            timestamp: >-
-              {% set data = namespace(found=None) %}
-              {% set now_ts = now().timestamp() %}
-
-              {% for e in upcoming_events['calendar.dtek_dnipro_outages_1_1'].events %}
-                {%- set start = as_timestamp(e.start) %}
-                {%- set end = as_timestamp(e.end) %}
-
-                {% if start <= now_ts < end %}
-                  {%- set data.found = end %}
-                  {%- break %}
-                {% elif start > now_ts %}
-                  {%- set data.found = end %}
-                  {%- break %}
-                {% endif %}
-              {% endfor -%}
-
-              {{ data.found }}
-      ```
-
-      Remember to update the calendar's entity ID and change the interval.
-
-3. Optionally make sensors for the next outage and power availability.
-
-   Go to the [helpers](https://my.home-assistant.io/redirect/helpers/):
-
-    1. Hit `Create helper` and pick `Date and/or time`.
-        - Name: `DTEK: Next Outage`
-        - Icon: `mdi:power-plug-off`
-        - Type: `Date and time`
-        - Hit `Create`
-
-    2. Hit `Create helper` and pick `Date and/or time`.
-        - Name: `DTEK: Next Connectivity`
-        - Icon: `mdi:power-plug`
-        - Type: `Date and time`
-        - Hit `Create`
-
-   3. Hit `Create helper`, pick `Template` and then `Sensor`.
-      - Name: `DTEK: Next Outage`
-      - State:
-        ```jinja2
-        {{ as_datetime(states('input_datetime.dtek_next_outage')) | as_local }}
-        ```
-      - Device class: `Timestamp`
-      - Hit `Submit`
-
-   4. Hit `Create helper`, pick `Template` and then `Sensor`.
-      - Name: `DTEK: Next Connectivity`
-      - State:
-        ```jinja2
-        {{ as_datetime(states('input_datetime.dtek_next_connectivity')) | as_local }}
-        ```
-      - Device class: `Timestamp`
-      - Hit `Submit`
-
-   Note the entity IDs as they depend on the name you choose. You should be good if simply copy-pasted from this tutorial. Otherwise, look for the right IDs.
+3. Create helpers (**read the comments** in the referenced YAMLs first, they start with `##`):
+   1. [Inputs and sensors](ha/configuration.yaml)
+   2. [Automations](ha/automations)
 
 ## Update
 

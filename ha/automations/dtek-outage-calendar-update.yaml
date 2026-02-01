@@ -1,0 +1,116 @@
+mode: single
+alias: DTEK Outage Calendar Update
+description: ""
+triggers:
+  - trigger: time_pattern
+    minutes: /3
+conditions: []
+actions:
+  - action: homeassistant.update_entity
+    metadata: {}
+    data:
+      entity_id:
+        ## Replace with your calendar entity ID.
+        - &calendar_entity_id calendar.dtek_dnipro_outages_1_1
+  - action: calendar.get_events
+    metadata: {}
+    target:
+      entity_id: *calendar_entity_id
+    data:
+      duration:
+        hours: 48
+    response_variable: upcoming_events
+  - variables:
+      tomorrow: "{{ (now().date() + timedelta(days=1)) | string }}"
+      calendar_entity_id: *calendar_entity_id
+      notification:
+        title: 🔌 DTEK
+        message: |-
+          Morrow's outage schedule just dropped!
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.dtek_next_outage
+    data:
+      timestamp: >-
+        {% set data = namespace(found=None) %}
+        {% set now_ts = now().timestamp() %}
+
+        {% for e in upcoming_events[calendar_entity_id].events %}
+          {%- set start = as_timestamp(e.start) %}
+
+          {% if start > now_ts %}
+            {%- set data.found = start %}
+            {%- break %}
+          {% endif %}
+        {% endfor -%}
+
+        {{ data.found }}
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.dtek_next_connectivity
+    data:
+      timestamp: >-
+        {% set data = namespace(found=None) %}
+        {% set now_ts = now().timestamp() %}
+
+        {% for e in upcoming_events[calendar_entity_id].events %}
+          {%- set start = as_timestamp(e.start) %}
+          {%- set end = as_timestamp(e.end) %}
+
+          {% if start <= now_ts < end %}
+            {%- set data.found = end %}
+            {%- break %}
+          {% elif start > now_ts %}
+            {%- set data.found = end %}
+            {%- break %}
+          {% endif %}
+        {% endfor -%}
+
+        {{ data.found }}
+  - alias: Notify about the outage schedule for tomorrow
+    if:
+      - alias: Has tomorrow’s schedule
+        condition: template
+        value_template: >-
+          {{ upcoming_events[calendar_entity_id].events | selectattr('start', 'search', tomorrow) | list | count > 0 }}
+      - alias: Not notified for tomorrow
+        condition: template
+        value_template: >-
+          {% set last_notified = states('input_datetime.dtek_tomorrow_schedule_date') | string %}
+          {{ last_notified != tomorrow }}
+    then:
+      ## -----------------------------------------------------------------------
+      ## IMPORTANT
+      ## -----------------------------------------------------------------------
+      ## Replace `notify.notify_all` with your entity.
+      ## -----------------------------------------------------------------------
+      - action: notify.notify_all
+        enabled: true
+        metadata: {}
+        data: "{{ notification }}"
+      ## -----------------------------------------------------------------------
+      ## OPTIONAL
+      ## -----------------------------------------------------------------------
+      ## I maintain a TG bot for my neighbourhood where notifications are sent
+      ## for the users I authorize. The schedule isn't part of the notification
+      ## as it tend to change a dozen times a day. Instead, there is a command
+      ## `/dtek_outage_schedule`. People call it when needed without bothering
+      ## anyone else if it had been a channel.
+      ## -----------------------------------------------------------------------
+      #- action: telegram_bot.send_message
+      #  metadata: {}
+      #  data:
+      #    title: "{{ notification.title }}"
+      #    message: "{{ notification.message }}"
+      #    parse_mode: plain_text
+      #    ## Replace with your Telegram Bot config entry.
+      #    config_entry_id: 01KE01C6X423DYR165PHVBD5VB
+      #    ## Use own targets.
+      #    target:
+      #      - "0000000000000"
+      - action: input_datetime.set_datetime
+        metadata: {}
+        target:
+          entity_id: input_datetime.dtek_tomorrow_schedule_date
+        data:
+          date: "{{ tomorrow }}"
