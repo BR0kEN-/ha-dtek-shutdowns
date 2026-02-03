@@ -1,9 +1,25 @@
 // Reverse-engineered from https://www.dtek-dnem.com.ua/src/js/static/discon-schedule.js
+// Example:
+// node dtek-check-shutdown.js \
+//   dnem \
+//   Дніпро \
+//   шосе Запорізьке \
+//   80 \
+//   '{"name":"visid_incap_2224656","value":"mWMC4fLzS0qFQKkzr96vqy0bgmkAAAAAQUIPAAAAAABd6KQjPcPN1O+ILZy75q9m"}
+//   {"name":"incap_ses_540_2224656","value":"HF93M0AOtz4JP2kwYHd+By0bgmkAAAAAHb5Q4Zs3xBtdMX6kxfjV6Q=="}'
 import { writeFileSync } from 'node:fs'
 import express from 'express'
 import puppeteer from 'puppeteer'
 
 process.env.TZ = 'Europe/Kyiv'
+
+/** @type {import('puppeteer-core').ResourceType[]} */
+const blockedResourceTypes = [
+  'stylesheet',
+  'image',
+  'media',
+  'font',
+]
 
 /**
  * @param {Date} input
@@ -132,12 +148,9 @@ async function fillAutocomplete(page, name, value) {
   )
 }
 
-async function getShutdown(page, catchResponse, region, locality, street, building) {
-  await page.goto(`https://www.dtek-${region}.com.ua/ua/shutdowns`)
+async function getShutdown(page, catchResponse, locality, street, building) {
   // Handle `Сайт працює, але через велике навантаження треба трохи зачекати і сторінка завантажиться.`.
   await page.waitForFunction(() => !!document.querySelector('.wrapper'), { timeout: 120_000 })
-  // Don't show freaking modals.
-  await page.addStyleTag({ content: '#modal-attention { display: none !important; }' })
 
   const detailsResponse = catchResponse()
   await fillAutocomplete(page, 'city', locality)
@@ -206,12 +219,10 @@ async function getBrowser(region, cookies) {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-blink-features=AutomationControlled',
-      '--start-maximized',
+      '--window-size=1920,1080',
     ],
   })
-console.log(
-  JSON.stringify(cookies, null, 2),
-);
+
   await browser.setCookie(
     ...cookies.map(({ name, value }) => ({
       name,
@@ -223,21 +234,33 @@ console.log(
     })),
   )
 
-  return browser
+  const [page] = await browser.pages()
+  const responseCatcher = setupResponseCatcher(page)
+
+  await page.setRequestInterception(true)
+
+  page.on('request', (request) => {
+    // I am an automation, leave those beauties yourself.
+    if (blockedResourceTypes.includes(request.resourceType())) {
+      request.abort()
+    } else {
+      request.continue()
+    }
+  })
+
+  await page.goto(`https://www.dtek-${region}.com.ua/ua/shutdowns`)
+
+  return [page, responseCatcher]
 }
 
-async function collect(browser, region, locality, street, building) {
-  const page = await browser.newPage()
+async function collect(page, responseCatcher, region, locality, street, building) {
+  await page.reload()
 
-  try {
-    const data = await getShutdown(page, setupResponseCatcher(page), region, locality, street, building)
+  const data = await getShutdown(page, responseCatcher, locality, street, building)
 
-    console.debug(JSON.stringify(data, null, 4))
+  console.debug(JSON.stringify(data, null, 4))
 
-    return data
-  } finally {
-    await page.close()
-  }
+  return data
 }
 
 class Ics {
@@ -328,7 +351,7 @@ function buildIcs(region, location, data) {
 
 async function main() {
   const [,, region, locality, street, building, incapsula, options] = process.argv
-  const browser = await getBrowser(region, incapsula.split('\n').map((cookie) => JSON.parse(cookie)))
+  const [page, responseCatcher] = await getBrowser(region, incapsula.split('\n').map((cookie) => JSON.parse(cookie)))
   const app = express()
   let pendingResponses = []
   let prevResult
@@ -355,7 +378,7 @@ async function main() {
       console.info(`[${reqId}] Reusing existing collection promise`)
     } else {
       console.info(`[${reqId}] Starting new collection...`)
-      promise = collect(browser, region, locality, street, building)
+      promise = collect(page, responseCatcher, region, locality, street, building)
         .then((result) => {
           prevResult = String(buildIcs(region, `${locality}, ${street} ${building}`, result))
 

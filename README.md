@@ -45,10 +45,14 @@ A Puppeteer-controlled browser visits the DTEK website when the API endpoint is 
 
 ## Install
 
+> [!IMPORTANT]
+> Use your region instead of `dnem` in the links below.
+
 1. [![Install](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FBR0kEN-%2Fha-dtek-shutdowns)
-2. Install & configure the address to monitor. It should be the one you enter at https://www.dtek-dnem.com.ua/ua/shutdowns (use your region instead of the `dnem` if you're not in Dnipro).
-3. Turn on `Autoupdate` & `Watchdog`.
-4. Start and check logs to ensure it's running.
+2. Configure the address to track. It should be the one you enter at https://www.dtek-dnem.com.ua/ua/shutdowns.
+3. While on https://www.dtek-dnem.com.ua/ua/shutdowns, open browser's DevTools and head to the cookies. Copy the ones that start with `incap_ses_` and `visid_incap_` to the addon configuration (name and value).
+4. Turn on `Autoupdate` & `Watchdog`.
+5. Start and check logs to ensure it's running.
 
 ## Configure
 
