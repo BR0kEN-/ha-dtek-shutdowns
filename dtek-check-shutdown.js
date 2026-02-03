@@ -384,7 +384,7 @@ async function main() {
 
           storeOutageMetadata({
             shutdown: !result.shutdown
-              ? null
+              ? {}
               : {
                 updatedAt: formatDate(result.shutdown.updatedAt),
                 startedAt: formatDate(result.shutdown.startedAt),
@@ -432,7 +432,7 @@ async function main() {
     await query(response, 'text/calendar; charset=utf-8')
   })
 
-  storeOutageMetadata({ shutdown: null })
+  storeOutageMetadata({ shutdown: {} })
   app.listen(8084, '0.0.0.0')
 }
 
