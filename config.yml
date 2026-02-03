@@ -2,7 +2,7 @@
 url: https://github.com/BR0kEN-/ha-dtek-shutdowns
 name: "DTEK Outages Checker"
 slug: "ha-dtek-shutdowns"
-version: "1.3.0"
+version: "1.4.0"
 description: "Visits the DTEK website to check the outages for your address and forms an ICS calendar."
 init: false
 arch:
@@ -21,8 +21,12 @@ options:
   locality: ""
   street: ""
   building: ""
+  incapsula: []
 schema:
   region: "list(dnem|kem|krem|oem)"
   locality: "str"
   street: "str"
   building: "str"
+  incapsula:
+    - name: str
+      value: str

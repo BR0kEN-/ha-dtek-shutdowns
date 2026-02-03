@@ -196,9 +196,10 @@ async function getShutdown(page, catchResponse, region, locality, street, buildi
   return result
 }
 
-async function collect(region, locality, street, building) {
+async function getBrowser(region, cookies) {
+  const domain = `.dtek-${region}.com.ua`
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: !!process.env.PUPPETEER_EXECUTABLE_PATH,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
     args: [
       '--no-sandbox',
@@ -209,16 +210,32 @@ async function collect(region, locality, street, building) {
     ],
   })
 
+
+  await browser.setCookie(
+    cookies.map(({ name, value }) => ({
+      name,
+      value,
+      domain,
+      secure: true,
+      httpOnly: true,
+      sameSite: 'None',
+    })),
+  )
+
+  return browser
+}
+
+async function collect(browser, region, locality, street, building) {
+  const page = await browser.newPage()
+
   try {
-    const [page] = await browser.pages()
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.224 Safari/537.36')
     const data = await getShutdown(page, setupResponseCatcher(page), region, locality, street, building)
 
     console.debug(JSON.stringify(data, null, 4))
 
     return data
   } finally {
-    await browser.close()
+    await page.close()
   }
 }
 
@@ -309,7 +326,20 @@ function buildIcs(region, location, data) {
 }
 
 async function main() {
-  const [,, region, locality, street, building, options] = process.argv
+  const [,, region, locality, street, building, incapsula, options] = process.argv
+  console.log(
+    incapsula,
+  );
+  const browser = await getBrowser(region, [
+    {
+      name: 'visid_incap_2224656',
+      value: 'mWMC4fLzS0qFQKkzr96vqy0bgmkAAAAAQUIPAAAAAABd6KQjPcPN1O+ILZy75q9m',
+    },
+    {
+      name: 'incap_ses_540_2224656',
+      value: 'HF93M0AOtz4JP2kwYHd+By0bgmkAAAAAHb5Q4Zs3xBtdMX6kxfjV6Q==',
+    },
+  ])
   const app = express()
   let pendingResponses = []
   let prevResult
@@ -336,7 +366,7 @@ async function main() {
       console.info(`[${reqId}] Reusing existing collection promise`)
     } else {
       console.info(`[${reqId}] Starting new collection...`)
-      promise = collect(region, locality, street, building)
+      promise = collect(browser, region, locality, street, building)
         .then((result) => {
           prevResult = String(buildIcs(region, `${locality}, ${street} ${building}`, result))
 

@@ -5,4 +5,5 @@ node dtek-check-shutdown.js \
   "$(bashio::config locality)" \
   "$(bashio::config street)" \
   "$(bashio::config building)" \
+  "$(bashio::config incapsula)" \
   store-metadata

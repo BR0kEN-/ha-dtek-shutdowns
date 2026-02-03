@@ -14,87 +14,122 @@ triggers:
       - event.watchdog_update_event
     to:
       - telegram_command
+conditions: []
 actions:
-  - if:
-      - alias: "Command: dtek_outage_schedule"
-        condition: template
-        value_template: "{{ trigger.to_state.attributes.command == '/dtek_outage_schedule' }}"
-    then:
-      - action: calendar.get_events
-        metadata: {}
-        target:
-          ## Replace with your calendar entity ID.
-          entity_id: &calendar_entity_id calendar.dtek_dnipro_outages_1_1
-        data:
-          start_date_time: "{{ now().date() }} 00:00:00"
-          duration:
-            hours: 48
-        response_variable: outage_events
   - variables:
-      calendar_entity_id: *calendar_entity_id
-      commands:
-        /start: Oi!
-        /next_gird_off: |-
-          {%- set value = states('sensor.dtek_next_outage') -%}
-          {%- if value in ['unknown', 'unavailable', ''] -%}
-            Unknown
-          {%- else -%}
-            {{ as_local(as_datetime(value)).strftime('%b %d, %Y at %H:%M') }}
-          {%- endif -%}
-        /next_gird_on: |-
-          {%- set value = states('sensor.dtek_next_connectivity') -%}
-          {%- if value in ['unknown', 'unavailable', ''] -%}
-            Unknown
-          {%- else -%}
-            {{ as_local(as_datetime(value)).strftime('%b %d, %Y at %H:%M') }}
-          {%- endif -%}
-        /dtek_outage_schedule: >-
-          {%- set events = outage_events[calendar_entity_id].events if outage_events is defined else [] -%}
+      datetime_format: "%b %d, %Y at %H:%M"
+  - alias: Commands
+    choose:
+      - alias: /start
+        conditions:
+          - alias: check
+            condition: template
+            value_template: "{{ trigger.to_state.attributes.command == '/start' }}"
+        sequence:
+          - variables:
+              output: Oi!
+      - alias: /next_[outage|connectivity]
+        conditions:
+          - alias: check
+            condition: template
+            value_template: "{{ trigger.to_state.attributes.command in ['/next_outage', '/next_connectivity'] }}"
+        sequence:
+          - variables:
+              sensor_id: "{{ 'sensor.dtek_' ~ trigger.to_state.attributes.command[1:] }}"
+              output: >-
+                {%- set value = states(sensor_id) | default('') -%}
+                {%- if value in ['unknown', 'unavailable', 'None', ''] -%}
+                  Unknown
+                {%- else -%}
+                  {{ as_local(as_datetime(value)).strftime(datetime_format) }}
+                {%- endif -%}
+      - alias: /outage_reason
+        conditions:
+          - alias: check
+            condition: template
+            value_template: "{{ trigger.to_state.attributes.command == '/outage_reason' }}"
+        sequence:
+          - variables:
+              sensor_id: "{{ 'sensor.dtek_' ~ trigger.to_state.attributes.command[1:] }}"
+              output: |-
+                {%- set value = states(sensor_id) | default('') -%}
+                {%- if value in ['unknown', 'unavailable', 'None', ''] -%}
+                  Unknown
+                {%- else -%}
+                  {%- set output = '⚡ ' ~ value ~ '\n' -%}
+                  {%- set output = output ~ '\nStarted on: ' ~ as_local(as_datetime(state_attr(sensor_id, 'startedAt'))).strftime(datetime_format) ~ '\n' -%}
+                  {%- set output = output ~ '\nEnds on: ' ~ as_local(as_datetime(state_attr(sensor_id, 'endsAt'))).strftime(datetime_format) ~ '\n' -%}
+                  {%- set output = output ~ '\n🕒 Refreshed on: ' ~ as_local(as_datetime(state_attr(sensor_id, 'updatedAt'))).strftime(datetime_format) ~ '\n' -%}
+                  {{ output }}
+                {%- endif -%}
+      - alias: /outage_schedule
+        conditions:
+          - alias: check
+            condition: template
+            value_template: "{{ trigger.to_state.attributes.command == '/outage_schedule' }}"
+        sequence:
+          - action: calendar.get_events
+            metadata: {}
+            target:
+              ## Replace with your calendar entity ID.
+              entity_id: &calendar_entity_id calendar.dtek_dnipro_outages_1_1
+            data:
+              start_date_time: "{{ now().date() }} 00:00:00"
+              duration:
+                hours: 48
+            response_variable: outage_events
+          - variables:
+              calendar_entity_id: *calendar_entity_id
+              output: |-
+                {%- set events = outage_events[calendar_entity_id].events -%}
 
-          {%- if events | length == 0 -%}
-            No power outages scheduled.
-          {%- else -%}
-            {%- set ns = namespace(cur_date=None, out='') -%}
-  
-            {%- for e in events -%}
-              {%- set s = as_datetime(e.start) -%}
-              {%- set f = as_datetime(e.end) -%}
-              {%- set d1 = s.date() -%}
-  
-              {%- if ns.cur_date != d1 -%}
-                {%- set ns.cur_date = d1 -%}
-                {%- if ns.out != '' -%}
-                  {%- set ns.out = ns.out ~ '\n' -%}
+                {%- if events | length == 0 -%}
+                  No power outages scheduled.
+                {%- else -%}
+                  {%- set ns = namespace(cur_date=None, out='') -%}
+
+                  {%- for e in events -%}
+                    {%- set s = as_datetime(e.start) -%}
+                    {%- set f = as_datetime(e.end) -%}
+                    {%- set d1 = s.date() -%}
+
+                    {%- if ns.cur_date != d1 -%}
+                      {%- set ns.cur_date = d1 -%}
+                      {%- if ns.out != '' -%}
+                        {%- set ns.out = ns.out ~ '\n' -%}
+                      {%- endif -%}
+                      {%- set ns.out = ns.out ~ '⚡ ' ~ d1.strftime('%d %b, %Y') ~ '\n' -%}
+                    {%- endif -%}
+
+                    {%- if f.date() != d1 -%}
+                      {%- set ns.out = ns.out ~ '• ' ~ s.strftime('%H:%M') ~ ' – 00:00' ~ '\n' -%}
+                    {%- else -%}
+                      {%- set ns.out = ns.out ~ '• ' ~ s.strftime('%H:%M') ~ ' – ' ~ f.strftime('%H:%M') ~ '\n' -%}
+                    {%- endif -%}
+
+                    {# second-day segment only if end isn't exactly 00:00 #}
+                    {%- if f.date() != d1 and not (f.hour == 0 and f.minute == 0 and f.second == 0) -%}
+                      {%- set d2 = f.date() -%}
+                      {%- if ns.cur_date != d2 -%}
+                        {%- set ns.cur_date = d2 -%}
+                        {%- set ns.out = ns.out ~ '\n⚡ ' ~ d2.strftime('%d %b, %Y') ~ '\n' -%}
+                      {%- endif -%}
+                      {%- set ns.out = ns.out ~ '• 00:00 – ' ~ f.strftime('%H:%M') ~ '\n' -%}
+                    {%- endif -%}
+
+                  {%- endfor -%}
+
+                  {{ (ns.out | trim) ~ '\n\n🕒 Refreshed on ' ~ as_local(as_datetime(state_attr('automation.dtek_outage_calendar_update', 'last_triggered'))).strftime(datetime_format) }}
                 {%- endif -%}
-                {%- set ns.out = ns.out ~ '⚡ ' ~ d1.strftime('%d %b, %Y') ~ '\n' -%}
-              {%- endif -%}
-  
-              {%- if f.date() != d1 -%}
-                {%- set ns.out = ns.out ~ '• ' ~ s.strftime('%H:%M') ~ ' – 00:00' ~ '\n' -%}
-              {%- else -%}
-                {%- set ns.out = ns.out ~ '• ' ~ s.strftime('%H:%M') ~ ' – ' ~ f.strftime('%H:%M') ~ '\n' -%}
-              {%- endif -%}
-  
-              {# second-day segment only if end isn't exactly 00:00 #}
-              {%- if f.date() != d1 and not (f.hour == 0 and f.minute == 0 and f.second == 0) -%}
-                {%- set d2 = f.date() -%}
-                {%- if ns.cur_date != d2 -%}
-                  {%- set ns.cur_date = d2 -%}
-                  {%- set ns.out = ns.out ~ '\n⚡ ' ~ d2.strftime('%d %b, %Y') ~ '\n' -%}
-                {%- endif -%}
-                {%- set ns.out = ns.out ~ '• 00:00 – ' ~ f.strftime('%H:%M') ~ '\n' -%}
-              {%- endif -%}
-  
-            {%- endfor -%}
-  
-            {{ (ns.out | trim) ~ '\n\n🕒 Refreshed on ' ~ as_local(as_datetime(state_attr('automation.dtek_outage_calendar_update', 'last_triggered'))).strftime('%b %d, %Y at %H:%M') }}
-          {%- endif -%}
+    default:
+      - variables:
+          output: WTF?
   - action: telegram_bot.send_message
     metadata: {}
     data:
       ## Replace with your Telegram Bot config entry.
       config_entry_id: 01KE01C6X423DYR165PHVBD5VB
       parse_mode: plain_text
-      message: "{{ commands.get(trigger.to_state.attributes.command, 'WTF?') }}"
+      message: "{{ output }}"
       target:
         - "{{ trigger.to_state.attributes.chat_id | int }}"

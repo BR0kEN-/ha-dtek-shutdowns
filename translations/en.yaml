@@ -10,3 +10,13 @@ configuration:
   building:
     name: Building
     description: The number, name, or any other marking of your building.
+  incapsula:
+    name: Imperva Incapsula
+    description: The cookies from your real visit to allow acting on your behalf.
+    fields:
+      name:
+        name: Name
+        description: The name of a cookie.
+      value:
+        name: Value
+        description: The cookie value.
