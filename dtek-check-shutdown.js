@@ -209,7 +209,9 @@ async function getBrowser(region, cookies) {
       '--start-maximized',
     ],
   })
-
+console.log(
+  JSON.stringify(cookies, null, 2),
+);
   await browser.setCookie(
     ...cookies.map(({ name, value }) => ({
       name,
