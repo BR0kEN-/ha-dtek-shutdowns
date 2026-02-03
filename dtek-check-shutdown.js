@@ -210,9 +210,8 @@ async function getBrowser(region, cookies) {
     ],
   })
 
-
   await browser.setCookie(
-    cookies.map(({ name, value }) => ({
+    ...cookies.map(({ name, value }) => ({
       name,
       value,
       domain,
@@ -327,19 +326,7 @@ function buildIcs(region, location, data) {
 
 async function main() {
   const [,, region, locality, street, building, incapsula, options] = process.argv
-  console.log(
-    incapsula,
-  );
-  const browser = await getBrowser(region, [
-    {
-      name: 'visid_incap_2224656',
-      value: 'mWMC4fLzS0qFQKkzr96vqy0bgmkAAAAAQUIPAAAAAABd6KQjPcPN1O+ILZy75q9m',
-    },
-    {
-      name: 'incap_ses_540_2224656',
-      value: 'HF93M0AOtz4JP2kwYHd+By0bgmkAAAAAHb5Q4Zs3xBtdMX6kxfjV6Q==',
-    },
-  ])
+  const browser = await getBrowser(region, incapsula.split('\n').map((cookie) => JSON.parse(cookie)))
   const app = express()
   let pendingResponses = []
   let prevResult
