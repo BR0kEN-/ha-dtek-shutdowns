@@ -9,9 +9,9 @@
 !.git*
 !*.yaml
 !*.yml
+!*.js
 
 !/Dockerfile
-!/dtek-check-shutdown.js
 !/package*.json
 !/README.md
 !/run.sh

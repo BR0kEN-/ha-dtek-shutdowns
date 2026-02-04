@@ -13,12 +13,14 @@ import puppeteer from 'puppeteer'
 
 process.env.TZ = 'Europe/Kyiv'
 
+const metadataDir = process.env.PUPPETEER_EXECUTABLE_PATH ? '/share' : '.'
 /** @type {import('puppeteer-core').ResourceType[]} */
 const blockedResourceTypes = [
   'stylesheet',
   'image',
   'media',
   'font',
+  'other',
 ]
 
 /**
@@ -210,7 +212,8 @@ async function getShutdown(page, catchResponse, locality, street, building) {
 }
 
 async function getBrowser(region, cookies) {
-  const domain = `.dtek-${region}.com.ua`
+  const domain = `dtek-${region}.com.ua`
+  const baseUrl = `https://www.${domain}`
   const browser = await puppeteer.launch({
     headless: !!process.env.PUPPETEER_EXECUTABLE_PATH,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -227,7 +230,7 @@ async function getBrowser(region, cookies) {
     ...cookies.map(({ name, value }) => ({
       name,
       value,
-      domain,
+      domain: `.${domain}`,
       secure: true,
       httpOnly: true,
       sameSite: 'None',
@@ -240,15 +243,21 @@ async function getBrowser(region, cookies) {
   await page.setRequestInterception(true)
 
   page.on('request', (request) => {
+    const url = request.url()
+
     // I am an automation, leave those beauties yourself.
-    if (blockedResourceTypes.includes(request.resourceType())) {
+    if (
+      blockedResourceTypes.includes(request.resourceType())
+      // External garbage like analytics.
+      || !url.startsWith(baseUrl)
+    ) {
       request.abort()
     } else {
       request.continue()
     }
   })
 
-  await page.goto(`https://www.dtek-${region}.com.ua/ua/shutdowns`)
+  await page.goto(`${baseUrl}/ua/shutdowns`)
 
   return [page, responseCatcher]
 }
@@ -349,23 +358,21 @@ function buildIcs(region, location, data) {
   return ics
 }
 
+function storeOutageMetadata(metadata) {
+  try {
+    writeFileSync(`${metadataDir}/dtek-outage-metadata.json`, JSON.stringify(metadata), 'utf-8')
+  } catch (error) {
+    console.error('Failed to write outage metadata file', error)
+  }
+}
+
 async function main() {
-  const [,, region, locality, street, building, incapsula, options] = process.argv
+  const [,, region, locality, street, building, incapsula] = process.argv
   const [page, responseCatcher] = await getBrowser(region, incapsula.split('\n').map((cookie) => JSON.parse(cookie)))
   const app = express()
   let pendingResponses = []
   let prevResult
   let promise
-
-  function storeOutageMetadata(metadata) {
-    if (options?.includes('store-metadata')) {
-      try {
-        writeFileSync('/share/dtek-outage-metadata.json', JSON.stringify(metadata), 'utf-8')
-      } catch (error) {
-        console.error('Failed to write outage metadata file', error)
-      }
-    }
-  }
 
   async function query(response, contentType) {
     const reqId = Math.random().toString(36).substring(7)
