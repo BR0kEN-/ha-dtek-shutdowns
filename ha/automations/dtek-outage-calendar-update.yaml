@@ -27,6 +27,8 @@ actions:
     response_variable: calendar_events
   - variables:
       calendar_entity_id: *calendar_entity_id
+      next_outage_input: &next_outage_input input_datetime.dtek_next_outage
+      next_connectivity_input: &next_connectivity_input input_datetime.dtek_next_connectivity
       fingerprint: |-
         {%- set raw = states('input_text.dtek_schedule_fingerprint') -%}
         {%- if raw in ['unknown', 'unavailable', '', none] -%}
@@ -44,7 +46,7 @@ actions:
       tomorrow: "{{ (now().date() + timedelta(days=1))|string }}"
   - action: input_datetime.set_datetime
     target:
-      entity_id: input_datetime.dtek_next_outage
+      entity_id: *next_outage_input
     data:
       timestamp: >-
         {% set data = namespace(found=None) %}
@@ -59,10 +61,10 @@ actions:
           {% endif %}
         {% endfor -%}
 
-        {{ data.found }}
+        {{ data.found or as_timestamp(states(next_outage_input)) }}
   - action: input_datetime.set_datetime
     target:
-      entity_id: input_datetime.dtek_next_connectivity
+      entity_id: *next_connectivity_input
     data:
       timestamp: >-
         {% set data = namespace(found=None) %}
@@ -81,7 +83,7 @@ actions:
           {% endif %}
         {% endfor -%}
 
-        {{ data.found }}
+        {{ data.found or as_timestamp(states(next_connectivity_input)) }}
   - alias: Build notification about the outage schedule for tomorrow
     if:
       - alias: Not notified for tomorrow
