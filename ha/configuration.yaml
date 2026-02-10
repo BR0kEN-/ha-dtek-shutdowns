@@ -5,7 +5,7 @@
 ##   according to your structure or create from UI.
 ## - DO NOT rename entities on creation. The name affects the entity
 ##   ID. If renamed, you're on your own. Look for `dtek_next_outage`,
-##   `dtek_next_connectivity`, and `dtek_tomorrow_schedule_date` across
+##   `dtek_next_connectivity`, and `dtek_schedule_fingerprint` across
 ##   the configs you create and either replace with your IDs or consider
 ##   updating created entities to change their IDs to the expected ones.
 ## -----------------------------------------------------------------------------
@@ -24,15 +24,19 @@ input_datetime:
     icon: mdi:power-plug
     has_date: true
     has_time: true
-  ## Computed and updated by the automation on calendar update
-  ## but only when there is a schedule published for tomorrow.
+
+input_text:
+  ## Computed and updated by the automation on calendar update.
   ## Used to avoid repeated notifications about the tomorrow's
-  ## schedule until the end of the day.
-  dtek_tomorrow_schedule_date:
-    name: "DTEK: Tomorrow schedule date"
-    icon: mdi:clock-outline
-    has_date: true
-    has_time: false
+  ## schedule until the end of the day and to notify about the
+  ## schedule changes.
+  dtek_schedule_fingerprint:
+    name: "DTEK: Schedule fingerprint"
+    icon: mdi:fingerprint
+    ## A concatenation of a date and the MD5 hash of the events.
+    ## The `YYYY-MM-DD|` is the minimal payload.
+    min: 11
+    max: 255
 
 template:
   - sensor:

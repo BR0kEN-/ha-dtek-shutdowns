@@ -1,3 +1,7 @@
+## - "Tomorrow dropped" → fires once per day when tomorrow first appears ✔
+## - "Schedule changed" → fires on any change within the 48h window ✔
+## - Single `input_text` used as `date|hash` ✔
+## - Restart-safe ✔
 mode: single
 alias: DTEK Outage Calendar Update
 description: ""
@@ -17,16 +21,27 @@ actions:
     target:
       entity_id: *calendar_entity_id
     data:
+      start_date_time: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
       duration:
         hours: 48
-    response_variable: upcoming_events
+    response_variable: calendar_events
   - variables:
-      tomorrow: "{{ (now().date() + timedelta(days=1)) | string }}"
       calendar_entity_id: *calendar_entity_id
-      notification:
-        title: 🔌 DTEK
-        message: |-
-          Morrow's outage schedule just dropped!
+      fingerprint: |-
+        {%- set raw = states('input_text.dtek_schedule_fingerprint') -%}
+        {%- if raw in ['unknown', 'unavailable', '', none] -%}
+        {%- set raw = (now().date()|string) ~ '|' -%}
+        {%- endif -%}
+        {{ raw.split('|') }}
+      current_hash: >-
+        {%- set data = namespace(parts=[]) -%}
+        {% for e in calendar_events[calendar_entity_id].events %}
+          {%- set data.parts = data.parts + [e.start ~ '|' ~ e.end] %}
+        {% endfor -%}
+        {{ (data.parts | join('+')) | md5 }}
+      previous_hash: "{{ fingerprint[1] }}"
+      notified_at: "{{ fingerprint[0] }}"
+      tomorrow: "{{ (now().date() + timedelta(days=1))|string }}"
   - action: input_datetime.set_datetime
     target:
       entity_id: input_datetime.dtek_next_outage
@@ -35,7 +50,7 @@ actions:
         {% set data = namespace(found=None) %}
         {% set now_ts = now().timestamp() %}
 
-        {% for e in upcoming_events[calendar_entity_id].events %}
+        {% for e in calendar_events[calendar_entity_id].events %}
           {%- set start = as_timestamp(e.start) %}
 
           {% if start > now_ts %}
@@ -53,7 +68,7 @@ actions:
         {% set data = namespace(found=None) %}
         {% set now_ts = now().timestamp() %}
 
-        {% for e in upcoming_events[calendar_entity_id].events %}
+        {% for e in calendar_events[calendar_entity_id].events %}
           {%- set start = as_timestamp(e.start) %}
           {%- set end = as_timestamp(e.end) %}
 
@@ -67,17 +82,36 @@ actions:
         {% endfor -%}
 
         {{ data.found }}
-  - alias: Notify about the outage schedule for tomorrow
+  - alias: Build notification about the outage schedule for tomorrow
     if:
+      - alias: Not notified for tomorrow
+        condition: template
+        value_template: "{{ notified_at != tomorrow }}"
       - alias: Has tomorrow’s schedule
         condition: template
         value_template: >-
-          {{ upcoming_events[calendar_entity_id].events | selectattr('start', 'search', tomorrow) | list | count > 0 }}
-      - alias: Not notified for tomorrow
-        condition: template
-        value_template: >-
-          {% set last_notified = states('input_datetime.dtek_tomorrow_schedule_date') | string %}
-          {{ last_notified != tomorrow }}
+          {{ calendar_events[calendar_entity_id].events | selectattr('start', 'search', tomorrow) | list | count > 0 }}
+    then:
+      - variables:
+          notification:
+            date: "{{ tomorrow }}"
+            message: "🔌 Morrow's outage schedule dropped!"
+    else:
+      - alias: Build notification about the outage schedule change
+        if:
+          - alias: The schedule has changed
+            condition: template
+            value_template: >-
+              {{ previous_hash != current_hash }}
+        then:
+          - variables:
+              notification:
+                date: "{{ notified_at }}"
+                message: "🔌 The outage schedule has changed!"
+  - alias: Notify
+    if:
+      - condition: template
+        value_template: "{{ notification is defined }}"
     then:
       ## -----------------------------------------------------------------------
       ## IMPORTANT
@@ -87,30 +121,33 @@ actions:
       - action: notify.notify_all
         enabled: true
         metadata: {}
-        data: "{{ notification }}"
+        data:
+          message: "{{ notification.message }}"
+      - action: input_text.set_value
+        metadata: {}
+        target:
+          entity_id: input_text.dtek_schedule_fingerprint
+        data:
+          value: "{{ notification.date }}|{{ current_hash }}"
       ## -----------------------------------------------------------------------
       ## OPTIONAL
       ## -----------------------------------------------------------------------
-      ## I maintain a TG bot for my neighbourhood where notifications are sent
-      ## for the users I authorize. The schedule isn't part of the notification
-      ## as it tend to change a dozen times a day. Instead, there is a command
-      ## `/dtek_outage_schedule`. People call it when needed without bothering
-      ## anyone else if it had been a channel.
+      ## I maintain a TG channel for my neighbourhood. The schedule isn't part
+      ## of the notification as it tends to change a dozen times a day. Instead,
+      ## there is the `/outage_schedule` command in the companion TG bot.
       ## -----------------------------------------------------------------------
       #- action: telegram_bot.send_message
       #  metadata: {}
       #  data:
-      #    title: "{{ notification.title }}"
-      #    message: "{{ notification.message }}"
+      #    title: "{{ title }}"
+      #    ## Use your bot instead of `YOUR_BOT`.
+      #    message: |-
+      #      {{ notification.message }}
+      #
+      #      Check it out in the @YOUR_BOT
       #    parse_mode: plain_text
       #    ## Replace with your Telegram Bot config entry.
       #    config_entry_id: 01KE01C6X423DYR165PHVBD5VB
       #    ## Use own targets.
       #    target:
-      #      - "0000000000000"
-      - action: input_datetime.set_datetime
-        metadata: {}
-        target:
-          entity_id: input_datetime.dtek_tomorrow_schedule_date
-        data:
-          date: "{{ tomorrow }}"
+      #      - "-1002222222222"
