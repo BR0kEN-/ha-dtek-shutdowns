@@ -28,27 +28,10 @@ function md5(text) {
   return createHash('md5').update(text).digest('hex')
 }
 
-function startOfLocalDay() {
-  const d = new Date()
+function startOfLocalDay(date) {
+  const d = new Date(date)
   d.setHours(0, 0, 0, 0)
   return d
-}
-
-function bucketIntervalsForDay(intervals, dayStart) {
-  const dayEnd = new Date(dayStart.getTime() + 86400 * 1000)
-  const parts = []
-
-  for (const interval of intervals) {
-    if (interval.start < dayEnd && interval.end > dayStart) {
-      parts.push(`${interval.start}|${interval.end}`)
-    }
-  }
-
-  return parts
-}
-
-function dayHashFromParts(parts) {
-  return md5(parts.join('+'))
 }
 
 /**
@@ -145,24 +128,104 @@ function buildIntervals(days) {
   return intervals
 }
 
-function buildScheduleState(result) {
-  const todayStart = startOfLocalDay()
-  const groups = {}
+function bucketIntervalsForDay(intervals, dayStart) {
+  const dayEnd = new Date(dayStart.getTime() + 86400 * 1000)
+  const parts = []
+
+  for (const interval of intervals) {
+    if (interval.start < dayEnd && interval.end > dayStart) {
+      parts.push(`${interval.start}|${interval.end}`)
+    }
+  }
+
+  return parts
+}
+
+/**
+ * - if now is inside an outage interval -> return that interval end
+ * - else if next outage interval exists -> return that interval end
+ * - else -> null (caller can keep previous value if needed)
+ *
+ * @param {{start: Date, end: Date}[]} intervals
+ * @param {Date} now
+ * @returns {Date|null}
+ */
+function computeNextConnectivity(intervals, now) {
+  const nowMs = now.getTime()
+
+  for (const interval of intervals) {
+    const startMs = interval.start.getTime()
+    const endMs = interval.end.getTime()
+
+    if (startMs <= nowMs && nowMs < endMs) {
+      return interval.end
+    }
+
+    if (startMs > nowMs) {
+      return interval.end
+    }
+  }
+
+  return null
+}
+
+/**
+ * - find the first outage interval whose start is > now
+ * - else return null (caller can keep previous value if needed)
+ *
+ * @param {{start: Date, end: Date}[]} intervals
+ * @param {Date} now
+ * @returns {Date|null}
+ */
+function computeNextOutage(intervals, now) {
+  const nowMs = now.getTime()
+
+  for (const interval of intervals) {
+    if (interval.start.getTime() > nowMs) {
+      return interval.start
+    }
+  }
+
+  return null
+}
+
+function buildState(result) {
+  const now  = new Date()
+  const todayStart = startOfLocalDay(now)
+  const intervals = {}
+  const future = {}
 
   for (const [key, start] of [
     ['today', todayStart],
     ['tomorrow', new Date(todayStart.getTime() + 86400 * 1000)],
   ]) {
-    groups[key] = bucketIntervalsForDay(result.schedule.events, start)
+    intervals[key] = bucketIntervalsForDay(result.schedule.events, start)
+  }
+
+  for (const [key, func] of [
+    ['Outage', computeNextOutage],
+    ['Connectivity', computeNextConnectivity],
+  ]) {
+    future[key] = func(result.schedule.events, now)
   }
 
   return {
-    hasTomorrowEvents: groups.tomorrow.length > 0,
-    hashes: Object
-      .entries(groups)
+    hasTomorrowEvents: intervals.tomorrow.length > 0,
+    ...Object
+      .entries(future)
       .reduce(
         (accumulator, [key, value]) => {
-          accumulator[key] = dayHashFromParts(value)
+          accumulator[`next${key}`] = value ? Math.floor(value.getTime() / 1000) : null
+
+          return accumulator
+        },
+        {},
+      ),
+    ...Object
+      .entries(intervals)
+      .reduce(
+        (accumulator, [key, value]) => {
+          accumulator[`${key}Hash`] = md5(value.join('+'))
 
           return accumulator
         },
@@ -444,7 +507,7 @@ async function main() {
           prevResult = String(buildIcs(region, `${locality}, ${street} ${building}`, result))
 
           storeOutageMetadata({
-            state: buildScheduleState(result),
+            state: buildState(result),
             shutdown: !result.shutdown
               ? {}
               : {
@@ -495,7 +558,7 @@ async function main() {
   })
 
   storeOutageMetadata({
-    state: buildScheduleState({ schedule: { events: [] } }),
+    state: buildState({ schedule: { events: [] } }),
     shutdown: {},
   })
 
