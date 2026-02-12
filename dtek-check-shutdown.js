@@ -215,7 +215,7 @@ function buildState(result) {
       .entries(future)
       .reduce(
         (accumulator, [key, value]) => {
-          accumulator[`next${key}`] = value ? formatDate(value) : null
+          accumulator[`next${key}`] = value ? `${formatDate(value).replace(' ', 'T')}Z` : null
 
           return accumulator
         },
