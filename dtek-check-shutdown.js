@@ -7,13 +7,14 @@
 //   80 \
 //   '{"name":"visid_incap_2224656","value":"mWMC4fLzS0qFQKkzr96vqy0bgmkAAAAAQUIPAAAAAABd6KQjPcPN1O+ILZy75q9m"}
 //   {"name":"incap_ses_540_2224656","value":"HF93M0AOtz4JP2kwYHd+By0bgmkAAAAAHb5Q4Zs3xBtdMX6kxfjV6Q=="}'
+import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import express from 'express'
 import puppeteer from 'puppeteer'
 
 process.env.TZ = 'Europe/Kyiv'
 
-const metadataDir = process.env.PUPPETEER_EXECUTABLE_PATH ? '/share' : '.'
+const metadataFile = `${process.env.PUPPETEER_EXECUTABLE_PATH ? '/share' : '.'}/dtek-outage-metadata.json`
 /** @type {import('puppeteer-core').ResourceType[]} */
 const blockedResourceTypes = [
   'stylesheet',
@@ -22,6 +23,33 @@ const blockedResourceTypes = [
   'font',
   'other',
 ]
+
+function md5(text) {
+  return createHash('md5').update(text).digest('hex')
+}
+
+function startOfLocalDay() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function bucketIntervalsForDay(intervals, dayStart) {
+  const dayEnd = new Date(dayStart.getTime() + 86400 * 1000)
+  const parts = []
+
+  for (const interval of intervals) {
+    if (interval.start < dayEnd && interval.end > dayStart) {
+      parts.push(`${interval.start}|${interval.end}`)
+    }
+  }
+
+  return parts
+}
+
+function dayHashFromParts(parts) {
+  return md5(parts.join('+'))
+}
 
 /**
  * @param {Date} input
@@ -115,6 +143,32 @@ function buildIntervals(days) {
   }
 
   return intervals
+}
+
+function buildScheduleState(result) {
+  const todayStart = startOfLocalDay()
+  const groups = {}
+
+  for (const [key, start] of [
+    ['today', todayStart],
+    ['tomorrow', new Date(todayStart.getTime() + 86400 * 1000)],
+  ]) {
+    groups[key] = bucketIntervalsForDay(result.schedule.events, start)
+  }
+
+  return {
+    hasTomorrowEvents: groups.tomorrow.length > 0,
+    hashes: Object
+      .entries(groups)
+      .reduce(
+        (accumulator, [key, value]) => {
+          accumulator[key] = dayHashFromParts(value)
+
+          return accumulator
+        },
+        {},
+      ),
+  }
 }
 
 function setupResponseCatcher(page) {
@@ -360,7 +414,7 @@ function buildIcs(region, location, data) {
 
 function storeOutageMetadata(metadata) {
   try {
-    writeFileSync(`${metadataDir}/dtek-outage-metadata.json`, JSON.stringify(metadata), 'utf-8')
+    writeFileSync(metadataFile, JSON.stringify(metadata), 'utf-8')
   } catch (error) {
     console.error('Failed to write outage metadata file', error)
   }
@@ -390,6 +444,7 @@ async function main() {
           prevResult = String(buildIcs(region, `${locality}, ${street} ${building}`, result))
 
           storeOutageMetadata({
+            state: buildScheduleState(result),
             shutdown: !result.shutdown
               ? {}
               : {
@@ -439,7 +494,11 @@ async function main() {
     await query(response, 'text/calendar; charset=utf-8')
   })
 
-  storeOutageMetadata({ shutdown: {} })
+  storeOutageMetadata({
+    state: buildScheduleState({ schedule: { events: [] } }),
+    shutdown: {},
+  })
+
   app.listen(8084, '0.0.0.0')
 }
 
