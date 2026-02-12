@@ -215,7 +215,7 @@ function buildState(result) {
       .entries(future)
       .reduce(
         (accumulator, [key, value]) => {
-          accumulator[`next${key}`] = value ? Math.floor(value.getTime() / 1000) : null
+          accumulator[`next${key}`] = value ? formatDate(value) : null
 
           return accumulator
         },

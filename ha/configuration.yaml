@@ -9,22 +9,6 @@
 ##   the configs you create and either replace with your IDs or consider
 ##   updating created entities to change their IDs to the expected ones.
 ## -----------------------------------------------------------------------------
-input_datetime:
-  ## Computed and updated by the automation on calendar update.
-  ## Used by the sensor that presents the value.
-  dtek_next_outage:
-    name: "DTEK: Next outage"
-    icon: mdi:power-plug-off
-    has_date: true
-    has_time: true
-  ## Computed and updated by the automation on calendar update.
-  ## Used by the sensor that presents the value.
-  dtek_next_connectivity:
-    name: "DTEK: Next connectivity"
-    icon: mdi:power-plug
-    has_date: true
-    has_time: true
-
 input_text:
   ## Computed and updated by the automation on calendar update.
   ## Used to avoid repeated notifications about the tomorrow's
@@ -34,32 +18,49 @@ input_text:
     name: "DTEK: Schedule fingerprint"
     icon: mdi:fingerprint
     ## A concatenation of a date and the MD5 hash of the events.
-    ## The `YYYY-MM-DD|` is the minimal payload.
-    min: 11
+    ## The `YYYY-MM-DD||` is the minimal payload.
+    min: 12
     max: 255
-
-template:
-  - sensor:
-      ## Creates `sensor.dtek_next_outage`.
-      - name: "DTEK: Next outage"
-        icon: mdi:power-plug-off
-        state: "{{ as_datetime(states('input_datetime.dtek_next_outage')) | as_local }}"
-        device_class: timestamp
-      ## Creates `sensor.dtek_next_connectivity`.
-      - name: "DTEK: Next connectivity"
-        icon: mdi:power-plug
-        state: "{{ as_datetime(states('input_datetime.dtek_next_connectivity')) | as_local }}"
-        device_class: timestamp
 
 command_line:
   - sensor:
-      ## A special reason with extra info and start-end interval.
-      ## E.g. `Згідно графіків`, `Екстернні відключення`, `Ремонтні роботи`.
-      name: "DTEK: Outage reason"
+      ## Creates `sensor.dtek_next_outage`.
+      name: "DTEK: Next outage"
+      icon: mdi:power-plug-off
+      device_class: timestamp
+      value_template: >
+        {{ value_json.state.nextOutage }}
+      json_attributes_path: $.state
+      json_attributes:
+        - hasTomorrowEvents
+        - todayHash
+        - tomorrowHash
       ## Created by the addon, don't change!
       command: cat /share/dtek-outage-metadata.json
       ## Same 3 mins as the automation that pulls the updates.
       scan_interval: 180
+
+  - sensor:
+      ## Creates `sensor.dtek_next_connectivity`.
+      name: "DTEK: Next connectivity"
+      icon: mdi:power-plug
+      device_class: timestamp
+      value_template: >
+        {{ value_json.state.nextConnectivity }}
+      json_attributes_path: $.state
+      json_attributes:
+        - hasTomorrowEvents
+        - todayHash
+        - tomorrowHash
+      ## Created by the addon, don't change!
+      command: cat /share/dtek-outage-metadata.json
+      ## Same 3 mins as the automation that pulls the updates.
+      scan_interval: 180
+
+  - sensor:
+      ## A special reason with extra info and start-end interval.
+      ## E.g. `Згідно графіків`, `Екстернні відключення`, `Ремонтні роботи`.
+      name: "DTEK: Outage reason"
       value_template: >
         {{ value_json.shutdown.reason if value_json.shutdown else none }}
       json_attributes_path: $.shutdown
@@ -67,3 +68,7 @@ command_line:
         - updatedAt
         - startedAt
         - endsAt
+      ## Created by the addon, don't change!
+      command: cat /share/dtek-outage-metadata.json
+      ## Same 3 mins as the automation that pulls the updates.
+      scan_interval: 180
